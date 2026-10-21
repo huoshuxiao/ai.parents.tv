@@ -1,0 +1,3 @@
+-keep class com.parentstv.live.data.** { *; }
+-keepattributes *Annotation*, InnerClasses
+-dontwarn org.jetbrains.annotations.**

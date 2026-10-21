@@ -1,0 +1,514 @@
+package com.parentstv.live.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.parentstv.live.BuildConfig
+import com.parentstv.live.data.BackKeyAction
+import com.parentstv.live.data.BeijingTime
+import com.parentstv.live.data.ChannelCatalog
+import com.parentstv.live.data.MenuKeyAction
+import com.parentstv.live.data.TvPrefs
+import kotlinx.coroutines.delay
+
+@Composable
+fun SettingsScreen(
+    catalog: ChannelCatalog,
+    favorites: Set<String>,
+    prefs: TvPrefs,
+    lastUpdateText: String,
+    updateMessage: String?,
+    updating: Boolean,
+    onRefreshLines: () -> Unit,
+    onBack: () -> Unit,
+    onClearFavorites: () -> Unit,
+) {
+    val backFocus = remember { FocusRequester() }
+    val keyFocus = remember { FocusRequester() }
+    var confirmClear by remember { mutableStateOf(false) }
+    var showKeySettings by remember { mutableStateOf(false) }
+    var keyDialogOpened by remember { mutableStateOf(false) }
+    BackHandler {
+        if (!showKeySettings && !confirmClear) onBack()
+    }
+    val generatedText = remember(catalog.generatedAt) {
+        BeijingTime.formatIso(catalog.generatedAt, "yyyy-MM-dd HH:mm") ?: "未知"
+    }
+
+    LaunchedEffect(Unit) {
+        delay(120)
+        runCatching { backFocus.requestFocus() }
+    }
+    LaunchedEffect(showKeySettings) {
+        if (showKeySettings) {
+            keyDialogOpened = true
+        } else if (keyDialogOpened) {
+            delay(100)
+            runCatching { keyFocus.requestFocus() }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(TvColors.Background, TvColors.BackgroundAlt),
+                ),
+            ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 56.dp, vertical = 22.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlayerActionButton(
+                    icon = Icons.Rounded.ArrowBack,
+                    label = "返回",
+                    focusRequester = backFocus,
+                    onClick = onBack,
+                )
+                Spacer(Modifier.width(22.dp))
+                Column {
+                    Text(
+                        text = "设置",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = TvColors.TextPrimary,
+                    )
+                    Text(
+                        text = "频道数据、遥控器与使用说明",
+                        color = TvColors.TextSecondary,
+                        fontSize = 14.sp,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                PlayerActionButton(
+                    icon = Icons.Rounded.Keyboard,
+                    label = "按键设置",
+                    focusRequester = keyFocus,
+                    onClick = { showKeySettings = true },
+                )
+                Spacer(Modifier.width(18.dp))
+                ParentsTvLogo(showSubtitle = false)
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                SettingsCard(
+                    title = "频道数据",
+                    modifier = Modifier.weight(1f),
+                ) {
+                    StatRow("频道总数", "${catalog.playableChannels().size}")
+                    StatRow("一级分类", "${catalog.categories.size} 个")
+                    StatRow(
+                        "地方省份",
+                        "${(catalog.categories.firstOrNull { it.id == "local" }?.subgroups?.size ?: 1) - 1} 个",
+                    )
+                    StatRow("数据生成（北京）", generatedText)
+                }
+                SettingsCard(
+                    title = "线路自动更新",
+                    modifier = Modifier.weight(1f),
+                ) {
+                    StatRow("上次更新（北京）", lastUpdateText)
+                    StatRow("更新周期", "每 12 小时")
+                    Text(
+                        text = updateMessage
+                            ?: "每 12 小时自动检查，只补充同名频道线路。",
+                        color = TvColors.TextSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    PlayerActionButton(
+                        icon = Icons.Rounded.Refresh,
+                        label = if (updating) "正在更新…" else "立即更新",
+                        enabled = !updating,
+                        onClick = onRefreshLines,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            SettingsCard(title = "我的收藏", modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "已收藏 ${favorites.size} 个频道",
+                            color = TvColors.TextPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "播放频道时，按菜单键或点按控制栏的爱心即可收藏。",
+                            color = TvColors.TextSecondary,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    PlayerActionButton(
+                        icon = Icons.Rounded.DeleteSweep,
+                        label = "清空收藏",
+                        enabled = favorites.isNotEmpty(),
+                        onClick = { confirmClear = true },
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Text(
+                text = "提示：隐藏控制栏后上下键换台 · 菜单键收藏 · 右上角按键设置可调整",
+                color = TvColors.TextSecondary.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "频道与线路来自公开 IPTV 列表，仅用于学习与个人测试；本应用不提供、不存储直播流。",
+                color = TvColors.TextSecondary.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "爸妈TV  v${BuildConfig.VERSION_NAME}  ·  为家人做的电视直播应用",
+                color = TvColors.TextSecondary.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+            )
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("清空收藏？") },
+            text = { Text("将删除全部 ${favorites.size} 个收藏频道，此操作无法撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onClearFavorites()
+                        confirmClear = false
+                    },
+                ) {
+                    Text("清空")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text("取消")
+                }
+            },
+            containerColor = TvColors.Surface,
+            titleContentColor = TvColors.TextPrimary,
+            textContentColor = TvColors.TextSecondary,
+        )
+    }
+
+    if (showKeySettings) {
+        KeySettingsDialog(
+            prefs = prefs,
+            onDismiss = { showKeySettings = false },
+        )
+    }
+}
+
+@Composable
+private fun KeySettingsDialog(
+    prefs: TvPrefs,
+    onDismiss: () -> Unit,
+) {
+    var zapWithUpDown by remember { mutableStateOf(prefs.zapWithUpDown) }
+    var menuAction by remember { mutableStateOf(prefs.menuKeyAction) }
+    var backAction by remember { mutableStateOf(prefs.backKeyAction) }
+    val firstFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(150)
+        runCatching { firstFocus.requestFocus() }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(780.dp)
+                .heightIn(max=500.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(TvColors.BackgroundAlt)
+                .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 30.dp, vertical = 22.dp),
+        ) {
+            Text(
+                text = "遥控器按键",
+                color = TvColors.TextPrimary,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "设置会立即保存，回到播放器后生效。",
+                color = TvColors.TextSecondary,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            KeySettingHeader(
+                title = "上下键换台",
+                description = "控制栏隐藏时，方向键上/下切换频道。",
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                KeyChoiceChip(
+                    label = "开启",
+                    selected = zapWithUpDown,
+                    focusRequester = firstFocus,
+                    onClick = {
+                        zapWithUpDown = true
+                        prefs.zapWithUpDown = true
+                    },
+                )
+                KeyChoiceChip(
+                    label = "关闭",
+                    selected = !zapWithUpDown,
+                    onClick = {
+                        zapWithUpDown = false
+                        prefs.zapWithUpDown = false
+                    },
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+
+            KeySettingHeader(
+                title = "菜单键",
+                description = "遥控器菜单键触发的动作。",
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MenuKeyAction.values().forEach { action ->
+                    KeyChoiceChip(
+                        label = when (action) {
+                            MenuKeyAction.Favorite -> "收藏频道"
+                            MenuKeyAction.Lines -> "选择线路"
+                            MenuKeyAction.Aspect -> "切换画面"
+                            MenuKeyAction.Off -> "关闭"
+                        },
+                        selected = menuAction == action,
+                        onClick = {
+                            menuAction = action
+                            prefs.menuKeyAction = action
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            KeySettingHeader(
+                title = "返回键",
+                description = "控制栏显示时，返回键的行为。",
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BackKeyAction.values().forEach { action ->
+                    KeyChoiceChip(
+                        label = when (action) {
+                            BackKeyAction.HideControls -> "先收起控制栏"
+                            BackKeyAction.BackToList -> "直接返回列表"
+                        },
+                        selected = backAction == action,
+                        onClick = {
+                            backAction = action
+                            prefs.backKeyAction = action
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "CH+ / CH- 键始终用于换台；长按与数字键保持系统默认。",
+                color = TvColors.TextSecondary.copy(alpha = 0.7f),
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                PlayerActionButton(
+                    icon = Icons.Rounded.Check,
+                    label = "完成",
+                    onClick = onDismiss,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeySettingHeader(
+    title: String,
+    description: String,
+) {
+    Text(
+        text = title,
+        color = TvColors.TextPrimary,
+        fontSize = 17.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Spacer(Modifier.height(2.dp))
+    Text(
+        text = description,
+        color = TvColors.TextSecondary,
+        fontSize = 12.sp,
+    )
+}
+
+@Composable
+private fun KeyChoiceChip(
+    label: String,
+    selected: Boolean,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
+    val fallbackFocus = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+    Box(
+        modifier = Modifier
+            .height(38.dp)
+            .clip(shape)
+            .background(
+                when {
+                    selected -> TvColors.Accent
+                    focused -> TvColors.SurfaceFocused
+                    else -> TvColors.Surface
+                },
+            )
+            .border(
+                width = 2.dp,
+                color = when {
+                    focused -> TvColors.Accent
+                    selected -> TvColors.Accent.copy(alpha = 0.65f)
+                    else -> TvColors.Divider
+                },
+                shape = shape,
+            )
+            .focusRequester(focusRequester ?: fallbackFocus)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = when {
+                selected -> Color(0xFF1A1200)
+                focused -> TvColors.TextPrimary
+                else -> TvColors.TextSecondary
+            },
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun SettingsCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(TvColors.Surface)
+            .border(1.dp, TvColors.Divider, RoundedCornerShape(18.dp))
+            .padding(18.dp),
+    ) {
+        Text(
+            text = title,
+            color = TvColors.Accent,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(8.dp))
+        content()
+    }
+}
+
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, color = TvColors.TextSecondary, fontSize = 14.sp)
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = value,
+            color = TvColors.TextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}

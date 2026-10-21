@@ -33,3 +33,9 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Catalog build cache
+tools/.cache/
+tools/__pycache__/
+
+gradle/
