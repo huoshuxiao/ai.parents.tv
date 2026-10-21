@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.WifiOff
@@ -49,6 +50,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +80,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
@@ -87,8 +90,14 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.parentstv.live.data.BackKeyAction
 import com.parentstv.live.data.BeijingTime
+import com.parentstv.live.data.DirectionKeyAction
+import com.parentstv.live.data.EpgProgram
+import com.parentstv.live.data.EpgRepository
+import com.parentstv.live.data.EpgSnapshot
+import com.parentstv.live.data.LineRecovery
 import com.parentstv.live.data.MenuKeyAction
 import com.parentstv.live.data.StreamProbe
+import com.parentstv.live.data.StreamUrl
 import com.parentstv.live.data.TvChannel
 import com.parentstv.live.data.TvPrefs
 import kotlinx.coroutines.Dispatchers
@@ -117,12 +126,25 @@ fun PlayerScreen(
     }
     val channel = queue.getOrElse(index) { initialChannel }
     var streamIndex by remember(channel.id) {
-        val preferred = channel.streams.indexOf(prefs.lineFor(channel.id))
+        val remembered = prefs.lineFor(channel.id)
+        val preferred = if (remembered == null) {
+            -1
+        } else {
+            channel.streams.indexOfFirst { StreamUrl.sameLine(it, remembered) }
+        }
         mutableIntStateOf(preferred.coerceAtLeast(0))
     }
     var retryNonce by remember(channel.id) { mutableIntStateOf(0) }
+    var reconnectsOnLine by remember(channel.id) { mutableIntStateOf(0) }
+    var lastRecoveryAt by remember(channel.id) { mutableLongStateOf(0L) }
+    var hasPlayed by remember(channel.id) { mutableStateOf(false) }
+    // 本台里已经真出过画面的线路号。换线只允许发生在没出过画面的线路上（见 LineRecovery）。
+    val playedLines = remember(channel.id) { mutableSetOf<Int>() }
     var errorMessage by remember(channel.id) { mutableStateOf<String?>(null) }
     var statusText by remember(channel.id) { mutableStateOf("正在连接…") }
+    var videoSize by remember(channel.id, streamIndex) { mutableStateOf<VideoSize?>(null) }
+    // 本次进入播放器后已经试过、且所有线路都起不了画面的频道。自动换台要靠它决定什么时候停手。
+    val unplayableChannels = remember { mutableSetOf<String>() }
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
     var controlsVisible by remember { mutableStateOf(true) }
@@ -132,6 +154,16 @@ fun PlayerScreen(
     var probeNonce by remember { mutableIntStateOf(0) }
     var probingLines by remember { mutableStateOf(false) }
     val lineProbes = remember { mutableStateMapOf<Int, StreamProbe.Result>() }
+
+    var guideVisible by remember { mutableStateOf(false) }
+    var epgSnapshot by remember { mutableStateOf(EpgSnapshot()) }
+    var minuteTick by remember { mutableIntStateOf(0) }
+    val onAirProgram = remember(epgSnapshot, channel.name, minuteTick) {
+        epgSnapshot.onAir(channel.name)
+    }
+    val upcomingPrograms = remember(epgSnapshot, channel.name, minuteTick) {
+        epgSnapshot.programsFor(channel.name)
+    }
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -143,7 +175,7 @@ fun PlayerScreen(
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
         )
     }
-    val aspectLabels = listOf("画面 适应", "画面 铺满", "画面 缩放")
+    val aspectLabels = listOf("适应", "铺满", "缩放")
 
     val httpFactory = remember {
         DefaultHttpDataSource.Factory()
@@ -168,22 +200,46 @@ fun PlayerScreen(
         onDispose { exoPlayer.release() }
     }
 
-    fun zap(delta: Int) {
+    fun jumpTo(next: Int) {
         if (queue.size <= 1) return
-        val next = (index + delta + queue.size) % queue.size
-        index = next
+        val target = ((next % queue.size) + queue.size) % queue.size
+        if (target == index) return
+        index = target
         errorMessage = null
         statusText = "正在连接…"
         isBuffering = true
         zapNotice = true
         linePickerVisible = false
-        onChannelChanged(queue[next])
+        onChannelChanged(queue[target])
+    }
+
+    fun zap(delta: Int) = jumpTo(index + delta)
+
+    // 本频道所有线路都试过一轮仍起不了画面：自动挪到下一个还没试过的频道。
+    // 一圈回到原处说明队列里每个频道都失败过，返回 false 让界面给出总失败提示，
+    // 否则会在几个坏频道之间无限转圈。
+    fun zapToNextChannel(reason: String): Boolean {
+        unplayableChannels.add(channel.id)
+        val candidate = (1..queue.size)
+            .map { (index + it) % queue.size }
+            .firstOrNull { queue[it].id !in unplayableChannels }
+        if (candidate == null) {
+            errorMessage = "已经试过队列里的 ${queue.size} 个频道，全部线路都起不了画面（$reason）"
+            statusText = ""
+            isBuffering = false
+            controlsVisible = true
+            linePickerVisible = false
+            return false
+        }
+        jumpTo(candidate)
+        return true
     }
 
     fun chooseLine(lineIndex: Int) {
         val url = channel.streams.getOrNull(lineIndex) ?: return
         prefs.setLine(channel.id, url)
         linePickerVisible = false
+        reconnectsOnLine = 0
         if (streamIndex == lineIndex) {
             retryNonce += 1
         } else {
@@ -197,6 +253,20 @@ fun PlayerScreen(
 
     LaunchedEffect(channel.id) {
         onChannelChanged(channel)
+    }
+
+    // 节目单整份 12 MB 左右，取一次存 6 小时，切频道不再重复下载；
+    // 关掉开关就不占这次请求。
+    LaunchedEffect(prefs.epgEnabled) {
+        if (!prefs.epgEnabled) return@LaunchedEffect
+        epgSnapshot = EpgRepository(context).snapshot()
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            minuteTick += 1
+        }
     }
 
     LaunchedEffect(linePickerVisible, channel.id, probeNonce) {
@@ -216,25 +286,70 @@ fun PlayerScreen(
         probingLines = false
     }
 
-    fun tryNextLine(message: String) {
-        if (streamIndex < channel.streams.lastIndex) {
-            statusText = "线路 ${streamIndex + 1} 不可用，正在切换备用线路…"
-            streamIndex += 1
-        } else {
-            errorMessage = message
-            statusText = ""
-            isBuffering = false
-            controlsVisible = true
+    fun tryNextLine(message: String?) {
+        // 同一次故障可能同时从 onPlayerError 和看门狗两条路进来，1.5 秒内只认第一次，
+        // 否则会一口气跳过两条本来能用的线路。
+        val now = System.currentTimeMillis()
+        if (now - lastRecoveryAt < RECOVERY_DEBOUNCE_MS) return
+        lastRecoveryAt = now
+        // 已经出过画面的线路只在原地重连，绝不自动换线、绝不自动换台（用户 2026-10-21 指令）；
+        // 只有从没出过画面的线路才走「重连 2 次 → 换下一条 → 换频道」。
+        val played = streamIndex in playedLines
+        when (
+            LineRecovery.action(
+                lineHasPlayed = played,
+                reconnectsOnLine = reconnectsOnLine,
+                sameLineReconnects = SAME_LINE_RECONNECTS,
+                lineIndex = streamIndex,
+                lastLineIndex = channel.streams.lastIndex,
+            )
+        ) {
+            LineRecovery.Action.ReconnectSameLine -> {
+                reconnectsOnLine += 1
+                statusText = if (played) {
+                    "线路 ${streamIndex + 1} 卡住了，正在原地重连（第 $reconnectsOnLine 次）…"
+                } else {
+                    "线路 ${streamIndex + 1} 卡住了，正在重连（第 $reconnectsOnLine 次）…"
+                }
+                errorMessage = null
+                isBuffering = true
+                retryNonce += 1
+            }
+
+            LineRecovery.Action.NextLine -> {
+                reconnectsOnLine = 0
+                statusText = "线路 ${streamIndex + 1} 不可用，正在切换备用线路…"
+                streamIndex += 1
+            }
+
+            LineRecovery.Action.NextChannel -> {
+                reconnectsOnLine = 0
+                if (!zapToNextChannel(message ?: "线路全部不可用")) {
+                    statusText = ""
+                    isBuffering = false
+                    controlsVisible = true
+                }
+            }
         }
     }
 
     LaunchedEffect(channel.id, streamIndex, retryNonce) {
         var stalledMs = 0L
+        var playingMs = 0L
         while (true) {
             delay(1_000)
             val waiting = exoPlayer.playWhenReady && !exoPlayer.isPlaying
-            stalledMs = if (waiting) stalledMs + 1_000 else 0L
-            if (stalledMs >= 25_000) {
+            if (waiting) {
+                stalledMs += 1_000
+                playingMs = 0
+            } else {
+                stalledMs = 0
+                if (exoPlayer.isPlaying) playingMs += 1_000
+            }
+            if (playingMs >= RECONNECT_AFTER_STABLE_MS) reconnectsOnLine = 0
+            // 起播阶段首片可能很慢，容忍 25 秒；已经出过画面后再卡 10 秒就重连。
+            val limit = if (hasPlayed) PLAYBACK_STALL_LIMIT_MS else CONNECT_STALL_LIMIT_MS
+            if (stalledMs >= limit) {
                 tryNextLine("线路长时间无响应，请检查网络后重试")
                 break
             }
@@ -253,6 +368,8 @@ fun PlayerScreen(
         errorMessage = null
         isBuffering = true
         statusText = if (streamIndex == 0) "正在连接…" else "正在尝试线路 ${streamIndex + 1}…"
+        // 回调里要记的是「本次连接试图播的这条线」，闭包捕获住编号，别等状态变了再读。
+        val lineBeingPlayed = streamIndex
 
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -266,6 +383,11 @@ fun PlayerScreen(
                         isBuffering = false
                         statusText = ""
                         errorMessage = null
+                        hasPlayed = true
+                        playedLines.add(lineBeingPlayed)
+                        // 自动换线换到的这条才是「这个频道实际能看的线路」，
+                        // 记住它，下次进台直接用，不必从第 1 条重头试。
+                        prefs.setLine(channel.id, url)
                     }
 
                     Player.STATE_ENDED -> {
@@ -277,11 +399,18 @@ fun PlayerScreen(
                 }
             }
 
+            override fun onVideoSizeChanged(size: VideoSize) {
+                videoSize = size
+            }
+
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 if (playing) {
                     isBuffering = false
                     statusText = ""
+                    hasPlayed = true
+                    playedLines.add(lineBeingPlayed)
+                    prefs.setLine(channel.id, url)
                 }
             }
 
@@ -317,8 +446,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, errorMessage, streamIndex, linePickerVisible) {
-        if (controlsVisible && isPlaying && errorMessage == null && !linePickerVisible) {
+    LaunchedEffect(controlsVisible, isPlaying, errorMessage, streamIndex, linePickerVisible, guideVisible) {
+        if (controlsVisible && isPlaying && errorMessage == null && !linePickerVisible && !guideVisible) {
             delay(5_000)
             controlsVisible = false
         }
@@ -331,8 +460,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, errorMessage, linePickerVisible) {
-        if (linePickerVisible) return@LaunchedEffect
+    LaunchedEffect(controlsVisible, errorMessage, linePickerVisible, guideVisible) {
+        if (linePickerVisible || guideVisible) return@LaunchedEffect
         delay(80)
         when {
             errorMessage != null -> runCatching { retryFocus.requestFocus() }
@@ -342,6 +471,10 @@ fun PlayerScreen(
     }
 
     BackHandler {
+        if (guideVisible) {
+            guideVisible = false
+            return@BackHandler
+        }
         if (linePickerVisible) {
             linePickerVisible = false
             return@BackHandler
@@ -366,7 +499,7 @@ fun PlayerScreen(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionUp -> {
-                        if (!controlsVisible && prefs.zapWithUpDown) {
+                        if (!controlsVisible && prefs.upKeyAction == DirectionKeyAction.Zap) {
                             zap(-1)
                             true
                         } else {
@@ -375,7 +508,7 @@ fun PlayerScreen(
                     }
 
                     Key.DirectionDown -> {
-                        if (!controlsVisible && prefs.zapWithUpDown) {
+                        if (!controlsVisible && prefs.downKeyAction == DirectionKeyAction.Zap) {
                             zap(1)
                             true
                         } else {
@@ -419,12 +552,6 @@ fun PlayerScreen(
 
                     Key.Menu -> {
                         when (prefs.menuKeyAction) {
-                            MenuKeyAction.Favorite -> {
-                                onToggleFavorite(channel)
-                                controlsVisible = true
-                                true
-                            }
-
                             MenuKeyAction.Lines -> {
                                 controlsVisible = true
                                 linePickerVisible = true
@@ -449,6 +576,9 @@ fun PlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
+                    // PlayerView 默认可聚焦，遥控器一按方向键焦点就掉进视频层、回不到底栏。
+                    isFocusable = false
+                    isFocusableInTouchMode = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setKeepContentOnPlayerReset(true)
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
@@ -511,6 +641,16 @@ fun PlayerScreen(
                         color = Color(0xFFCBD5E1),
                         fontSize = 15.sp,
                     )
+                    if (prefs.epgEnabled && onAirProgram != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = onAirLine(onAirProgram),
+                            color = TvColors.Success,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
@@ -529,6 +669,15 @@ fun PlayerScreen(
                         color = if (statusText.isNotBlank()) TvColors.Accent else Color(0xFFCBD5E1),
                         fontSize = 13.sp,
                     )
+                    val resolution = if (prefs.showVideoResolution) resolutionLine(videoSize) else null
+                    if (resolution != null) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = resolution,
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             }
         }
@@ -574,10 +723,10 @@ fun PlayerScreen(
                             listOf(Color.Transparent, Color.Black.copy(alpha = 0.92f)),
                         ),
                     )
-                    .padding(horizontal = 48.dp, vertical = 26.dp),
+                    .padding(horizontal = 40.dp, vertical = 26.dp),
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerActionButton(
@@ -620,10 +769,15 @@ fun PlayerScreen(
                         label = "选线",
                         onClick = { linePickerVisible = true },
                     )
+                    PlayerActionButton(
+                        icon = Icons.Rounded.Schedule,
+                        label = "节目单",
+                        onClick = { guideVisible = true },
+                    )
                     Spacer(Modifier.weight(1f))
                     PlayerActionButton(
                         icon = Icons.Rounded.ArrowBack,
-                        label = "返回列表",
+                        label = "返回",
                         onClick = onBack,
                     )
                 }
@@ -691,6 +845,8 @@ fun PlayerScreen(
                         label = "重试全部线路",
                         focusRequester = retryFocus,
                         onClick = {
+                            unplayableChannels.clear()
+                            reconnectsOnLine = 0
                             streamIndex = 0
                             errorMessage = null
                             statusText = "正在连接…"
@@ -718,22 +874,200 @@ fun PlayerScreen(
                 onDismiss = { linePickerVisible = false },
             )
         }
+
+        if (guideVisible) {
+            ProgramGuideDialog(
+                channelName = channel.name,
+                programs = upcomingPrograms,
+                epgEnabled = prefs.epgEnabled,
+                onDismiss = { guideVisible = false },
+            )
+        }
+    }
+}
+
+private const val SAME_LINE_RECONNECTS = 2
+private const val RECONNECT_AFTER_STABLE_MS = 60_000L
+private const val CONNECT_STALL_LIMIT_MS = 25_000L
+private const val PLAYBACK_STALL_LIMIT_MS = 10_000L
+private const val RECOVERY_DEBOUNCE_MS = 1_500L
+
+private fun resolutionLine(size: VideoSize?): String? {
+    val width = size?.width ?: 0
+    val height = size?.height ?: 0
+    if (width <= 0 || height <= 0) return null
+    val tier = when {
+        height >= 2160 || width >= 3840 -> "4K"
+        height >= 1080 || width >= 1920 -> "全高清"
+        height >= 720 || width >= 1280 -> "高清"
+        else -> "标清"
+    }
+    return "$width×$height · $tier"
+}
+
+private fun onAirLine(program: EpgProgram, now: Long = System.currentTimeMillis()): String {
+    val minutes = ((program.stop - now) / 60_000L).coerceAtLeast(0L)
+    val range = "${BeijingTime.format(program.start, "HH:mm")}-${BeijingTime.format(program.stop, "HH:mm")}"
+    return "${program.title} · $range · 还剩 $minutes 分钟"
+}
+
+@Composable
+private fun ProgramGuideDialog(
+    channelName: String,
+    programs: List<EpgProgram>,
+    epgEnabled: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val now = System.currentTimeMillis()
+    val onAirIndex = programs.indexOfLast { it.start <= now }.coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = onAirIndex)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(760.dp)
+                .heightIn(max = 560.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(TvColors.BackgroundAlt)
+                .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
+                .padding(horizontal = 26.dp, vertical = 22.dp),
+        ) {
+            Text(
+                text = "节目单",
+                color = TvColors.TextPrimary,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = when {
+                    !epgEnabled -> "$channelName · 节目单已在设置里关闭"
+                    programs.isEmpty() -> "$channelName · 公开节目单暂时没覆盖这个频道"
+                    else -> "$channelName · 共 ${programs.size} 条 · 时间为北京时间"
+                },
+                color = TvColors.TextSecondary,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (programs.isEmpty()) {
+                Text(
+                    text = "可以先在设置里检查网络，或稍后再看；线路和频道不受影响。",
+                    color = TvColors.TextSecondary.copy(alpha = 0.85f),
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 372.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    itemsIndexed(programs, key = { position, _ -> position }) { position, program ->
+                        ProgramRow(
+                            program = program,
+                            now = now,
+                            onAir = position == onAirIndex,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "按返回键关闭",
+                    color = TvColors.TextSecondary.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                PlayerActionButton(
+                    icon = Icons.Rounded.Check,
+                    label = "完成",
+                    onClick = onDismiss,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgramRow(
+    program: EpgProgram,
+    now: Long,
+    onAir: Boolean,
+) {
+    val shape = RoundedCornerShape(11.dp)
+    val live = program.start <= now && program.stop > now
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                when {
+                    onAir -> TvColors.AccentSoft
+                    live -> TvColors.SurfaceFocused
+                    else -> Color.Transparent
+                },
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = BeijingTime.format(program.start, "HH:mm"),
+            color = if (onAir) TvColors.Accent else TvColors.TextSecondary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = program.title,
+            color = if (program.start > now) TvColors.TextSecondary else TvColors.TextPrimary,
+            fontSize = 17.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (onAir) {
+            Spacer(Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(TvColors.Accent)
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = "正在播出",
+                    color = Color(0xFF1A1200),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
     }
 }
 
 private fun playerKeyHint(prefs: TvPrefs): String {
-    val zap = if (prefs.zapWithUpDown) "上下键换台" else "上下键换台已关闭"
+    val up = if (prefs.upKeyAction == DirectionKeyAction.Zap) "上键换台" else "上键移焦点"
+    val down = if (prefs.downKeyAction == DirectionKeyAction.Zap) "下键换台" else "下键移焦点"
     val back = when (prefs.backKeyAction) {
         BackKeyAction.HideControls -> "返回键收起控制栏"
         BackKeyAction.BackToList -> "返回键返回列表"
     }
     val menu = when (prefs.menuKeyAction) {
-        MenuKeyAction.Favorite -> "菜单键收藏"
         MenuKeyAction.Lines -> "菜单键选线"
         MenuKeyAction.Aspect -> "菜单键切换画面"
         MenuKeyAction.Off -> "菜单键无动作"
     }
-    return "$zap · $back · $menu"
+    return "$up · $down · $back · $menu"
 }
 
 @Composable

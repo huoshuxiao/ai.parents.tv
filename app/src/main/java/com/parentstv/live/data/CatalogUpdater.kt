@@ -43,7 +43,7 @@ class CatalogUpdater(private val context: Context) {
         val cached = repository.loadCacheOrNull()
         // 应用更新后内置清单会比缓存新：这时要以内置清单为底重新拼，
         // 否则旧缓存会一直盖住新加的线路，清理和补充都落不到设备上。
-        val base = if (cached != null && cached.generatedAt >= assets.generatedAt) cached else assets
+        val base = if (cached != null && notOlderThan(cached.generatedAt, assets.generatedAt)) cached else assets
         val fetched = coroutineScope {
             SOURCES.map { mirrors ->
                 async(Dispatchers.IO) { fetchAny(mirrors) }
@@ -67,12 +67,14 @@ class CatalogUpdater(private val context: Context) {
         var changed = false
         val channels = base.channels.map { channel ->
             val fresh = discovered[normalize(channel.name)].orEmpty()
-                .sortedBy { it.startsWith("http://[") }
+                .sortedBy { StreamUrl.isIpv6(it) }
             val merged = (channel.streams + fresh)
-                .filterNot { isDeadStream(it) }
-                .distinct()
-                .take(MAX_STREAMS_PER_CHANNEL)
-            added += (merged - channel.streams.toSet()).size
+                .filterNot { DeadStreams.isDead(it) }
+                .filterNot { StreamRules.neverPlayable(it) != null }
+                .distinctBy { StreamUrl.canonical(it) }
+            added += merged.count { kept ->
+                channel.streams.none { StreamUrl.sameLine(it, kept) }
+            }
             if (merged == channel.streams) {
                 channel
             } else {
@@ -146,7 +148,11 @@ class CatalogUpdater(private val context: Context) {
                     val name = pendingName
                     if (name != null) {
                         val urls = out.getOrPut(normalize(name)) { mutableListOf() }
-                        if (urls.size < MAX_DISCOVERED_PER_NAME && line !in urls) urls.add(line)
+                        if (StreamRules.neverPlayable(line) == null &&
+                            urls.none { StreamUrl.sameLine(it, line) }
+                        ) {
+                            urls.add(line)
+                        }
                     }
                     pendingName = null
                 }
@@ -156,17 +162,15 @@ class CatalogUpdater(private val context: Context) {
         }
     }
 
-    private fun normalize(name: String): String =
-        name.substringBefore('(')
-            .substringBefore('（')
-            .replace("高清", "")
-            .replace("超清", "")
-            .replace("频道", "")
-            .replace(NAME_SEPARATORS, "")
-            .lowercase()
+    private fun normalize(name: String): String = ChannelName.normalize(name)
 
-    // 实测连不通（TCP 不通或清单有但分片 404）的线路，公开源会反复带回。按整串匹配，不做转义解码。
-    private fun isDeadStream(stream: String): Boolean = stream.trim() in DEAD_STREAMS
+    /** 两份目录的 generatedAt 是 ISO 串，写法可能一个是 Z、一个是 +08:00，按字典序比会反。
+     *  能解析就换成毫秒比，解析不了才退回字典序。 */
+    private fun notOlderThan(candidate: String, reference: String): Boolean {
+        val left = BeijingTime.parseIso(candidate)
+        val right = BeijingTime.parseIso(reference)
+        return if (left != null && right != null) left >= right else candidate >= reference
+    }
 
     data class UpdateResult(
         val addedLines: Int,
@@ -189,18 +193,8 @@ class CatalogUpdater(private val context: Context) {
         const val KEY_LAST_UPDATE = "last_update"
         const val KEY_LAST_ADDED = "last_added"
         const val UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000
-        const val MAX_STREAMS_PER_CHANNEL = 8
-        const val MAX_DISCOVERED_PER_NAME = 8
 
         val TVG_NAME = Regex("tvg-name=\"([^\"]*)\"")
-        val NAME_SEPARATORS = Regex("[\\s\\-_·•|]+")
-
-        val DEAD_STREAMS = setOf(
-            "http://59.44.102.18:8888/newlive/live/hls/45/live.m3u8",
-            "http://42.176.185.28:9901/tsfile/live/1007_1.m3u8",
-            "http://dassby.qqff.top:99/live/辽宁体育/index.m3u8",
-            "http://dassby.qqff.top:99/live/%E8%BE%BD%E5%AE%81%E4%BD%93%E8%82%B2/index.m3u8",
-        )
 
         val SOURCES = listOf(
             listOf(

@@ -3,14 +3,13 @@ package com.parentstv.live.data
 import android.content.Context
 
 enum class MenuKeyAction {
-    Favorite,
     Lines,
     Aspect,
     Off;
 
     companion object {
         fun from(value: String?): MenuKeyAction =
-            values().firstOrNull { it.name == value } ?: Favorite
+            values().firstOrNull { it.name == value } ?: Lines
     }
 }
 
@@ -21,6 +20,20 @@ enum class BackKeyAction {
     companion object {
         fun from(value: String?): BackKeyAction =
             values().firstOrNull { it.name == value } ?: HideControls
+    }
+}
+
+/**
+ * 方向键的行为。用户要求上下键分开配置，而不是一个总开关：
+ * 有人习惯上键翻到上一个台，也有人只想要焦点移动。
+ */
+enum class DirectionKeyAction {
+    Zap,
+    MoveFocus;
+
+    companion object {
+        fun from(value: String?): DirectionKeyAction =
+            values().firstOrNull { it.name == value } ?: Zap
     }
 }
 
@@ -48,10 +61,34 @@ class TvPrefs(context: Context) {
             sp.edit().putString(KEY_LAST_CATEGORY, value).apply()
         }
 
-    var zapWithUpDown: Boolean
-        get() = sp.getBoolean(KEY_ZAP_UP_DOWN, true)
+    var upKeyAction: DirectionKeyAction
+        get() = DirectionKeyAction.from(sp.getString(KEY_UP_ACTION, null))
         set(value) {
-            sp.edit().putBoolean(KEY_ZAP_UP_DOWN, value).apply()
+            sp.edit().putString(KEY_UP_ACTION, value.name).apply()
+        }
+
+    var downKeyAction: DirectionKeyAction
+        get() = DirectionKeyAction.from(sp.getString(KEY_DOWN_ACTION, null))
+        set(value) {
+            sp.edit().putString(KEY_DOWN_ACTION, value.name).apply()
+        }
+
+    var rememberLastChannel: Boolean
+        get() = sp.getBoolean(KEY_REMEMBER_LAST, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_REMEMBER_LAST, value).apply()
+        }
+
+    var epgEnabled: Boolean
+        get() = sp.getBoolean(KEY_EPG_ENABLED, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_EPG_ENABLED, value).apply()
+        }
+
+    var showVideoResolution: Boolean
+        get() = sp.getBoolean(KEY_SHOW_RESOLUTION, true)
+        set(value) {
+            sp.edit().putBoolean(KEY_SHOW_RESOLUTION, value).apply()
         }
 
     var menuKeyAction: MenuKeyAction
@@ -88,7 +125,11 @@ class TvPrefs(context: Context) {
         const val KEY_FAVORITES = "favorites"
         const val KEY_LAST_CHANNEL = "last_channel"
         const val KEY_LAST_CATEGORY = "last_category"
-        const val KEY_ZAP_UP_DOWN = "zap_up_down"
+        const val KEY_UP_ACTION = "up_key_action"
+        const val KEY_DOWN_ACTION = "down_key_action"
+        const val KEY_REMEMBER_LAST = "remember_last_channel"
+        const val KEY_EPG_ENABLED = "epg_enabled"
+        const val KEY_SHOW_RESOLUTION = "show_resolution"
         const val KEY_MENU_ACTION = "menu_action"
         const val KEY_BACK_ACTION = "back_action"
         const val KEY_LINE_PREFIX = "line_"

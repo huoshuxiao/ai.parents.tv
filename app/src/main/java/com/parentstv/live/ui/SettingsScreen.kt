@@ -53,6 +53,7 @@ import com.parentstv.live.BuildConfig
 import com.parentstv.live.data.BackKeyAction
 import com.parentstv.live.data.BeijingTime
 import com.parentstv.live.data.ChannelCatalog
+import com.parentstv.live.data.DirectionKeyAction
 import com.parentstv.live.data.MenuKeyAction
 import com.parentstv.live.data.TvPrefs
 import kotlinx.coroutines.delay
@@ -74,6 +75,9 @@ fun SettingsScreen(
     var confirmClear by remember { mutableStateOf(false) }
     var showKeySettings by remember { mutableStateOf(false) }
     var keyDialogOpened by remember { mutableStateOf(false) }
+    var rememberLastChannel by remember { mutableStateOf(prefs.rememberLastChannel) }
+    var epgEnabled by remember { mutableStateOf(prefs.epgEnabled) }
+    var showResolution by remember { mutableStateOf(prefs.showVideoResolution) }
     BackHandler {
         if (!showKeySettings && !confirmClear) onBack()
     }
@@ -106,6 +110,7 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 56.dp, vertical = 22.dp),
         ) {
             Row(
@@ -198,7 +203,7 @@ fun SettingsScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "播放频道时，按菜单键或点按控制栏的爱心即可收藏。",
+                            text = "播放频道时，点控制栏的爱心即可收藏；菜单键现在用来选线路。",
                             color = TvColors.TextSecondary,
                             fontSize = 13.sp,
                         )
@@ -212,10 +217,60 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(14.dp))
+
+            SettingsCard(title = "播放与界面", modifier = Modifier.fillMaxWidth()) {
+                PrefSwitchRow(
+                    title = "开机回到上次频道",
+                    description = "关掉后每次打开都从分类开头，不回上次看的频道。",
+                    selected = if (rememberLastChannel) 0 else 1,
+                    firstLabel = "开",
+                    secondLabel = "关",
+                    onFirst = {
+                        rememberLastChannel = true
+                        prefs.rememberLastChannel = true
+                    },
+                    onSecond = {
+                        rememberLastChannel = false
+                        prefs.rememberLastChannel = false
+                    },
+                )
+                PrefSwitchRow(
+                    title = "直播节目单",
+                    description = "画面上显示正在播出，并可以打开完整节目单。每 6 小时联网取一次。",
+                    selected = if (epgEnabled) 0 else 1,
+                    firstLabel = "开",
+                    secondLabel = "关",
+                    onFirst = {
+                        epgEnabled = true
+                        prefs.epgEnabled = true
+                    },
+                    onSecond = {
+                        epgEnabled = false
+                        prefs.epgEnabled = false
+                    },
+                )
+                PrefSwitchRow(
+                    title = "显示画面分辨率",
+                    description = "起播后在右上角显示 1920×1080 这样的实际画面尺寸。",
+                    selected = if (showResolution) 0 else 1,
+                    firstLabel = "开",
+                    secondLabel = "关",
+                    onFirst = {
+                        showResolution = true
+                        prefs.showVideoResolution = true
+                    },
+                    onSecond = {
+                        showResolution = false
+                        prefs.showVideoResolution = false
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(18.dp))
 
             Text(
-                text = "提示：隐藏控制栏后上下键换台 · 菜单键收藏 · 右上角按键设置可调整",
+                text = "提示：控制栏隐藏后按方向键换台 · 菜单键选线路 · 右上角按键设置可调整",
                 color = TvColors.TextSecondary.copy(alpha = 0.7f),
                 fontSize = 12.sp,
             )
@@ -227,7 +282,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "爸妈TV  v${BuildConfig.VERSION_NAME}  ·  为家人做的电视直播应用",
+                text = "父母TV  v${BuildConfig.VERSION_NAME}  ·  为家人做的电视直播应用",
                 color = TvColors.TextSecondary.copy(alpha = 0.5f),
                 fontSize = 12.sp,
             )
@@ -273,7 +328,8 @@ private fun KeySettingsDialog(
     prefs: TvPrefs,
     onDismiss: () -> Unit,
 ) {
-    var zapWithUpDown by remember { mutableStateOf(prefs.zapWithUpDown) }
+    var upAction by remember { mutableStateOf(prefs.upKeyAction) }
+    var downAction by remember { mutableStateOf(prefs.downKeyAction) }
     var menuAction by remember { mutableStateOf(prefs.menuKeyAction) }
     var backAction by remember { mutableStateOf(prefs.backKeyAction) }
     val firstFocus = remember { FocusRequester() }
@@ -312,41 +368,53 @@ private fun KeySettingsDialog(
             Spacer(Modifier.height(16.dp))
 
             KeySettingHeader(
-                title = "上下键换台",
-                description = "控制栏隐藏时，方向键上/下切换频道。",
+                title = "上键",
+                description = "控制栏隐藏时，遥控器「上」键做什么。",
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KeyChoiceChip(
-                    label = "开启",
-                    selected = zapWithUpDown,
-                    focusRequester = firstFocus,
-                    onClick = {
-                        zapWithUpDown = true
-                        prefs.zapWithUpDown = true
-                    },
-                )
-                KeyChoiceChip(
-                    label = "关闭",
-                    selected = !zapWithUpDown,
-                    onClick = {
-                        zapWithUpDown = false
-                        prefs.zapWithUpDown = false
-                    },
-                )
+                DirectionKeyAction.values().forEachIndexed { position, action ->
+                    KeyChoiceChip(
+                        label = directionLabel(action, up = true),
+                        selected = upAction == action,
+                        focusRequester = if (position == 0) firstFocus else null,
+                        onClick = {
+                            upAction = action
+                            prefs.upKeyAction = action
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            KeySettingHeader(
+                title = "下键",
+                description = "控制栏隐藏时，遥控器「下」键做什么。",
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DirectionKeyAction.values().forEach { action ->
+                    KeyChoiceChip(
+                        label = directionLabel(action, up = false),
+                        selected = downAction == action,
+                        onClick = {
+                            downAction = action
+                            prefs.downKeyAction = action
+                        },
+                    )
+                }
             }
             Spacer(Modifier.height(16.dp))
 
             KeySettingHeader(
                 title = "菜单键",
-                description = "遥控器菜单键触发的动作。",
+                description = "遥控器菜单键触发的动作。收藏改用控制栏的爱心按钮。",
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MenuKeyAction.values().forEach { action ->
                     KeyChoiceChip(
                         label = when (action) {
-                            MenuKeyAction.Favorite -> "收藏频道"
                             MenuKeyAction.Lines -> "选择线路"
                             MenuKeyAction.Aspect -> "切换画面"
                             MenuKeyAction.Off -> "关闭"
@@ -468,6 +536,49 @@ private fun KeyChoiceChip(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
+}
+
+@Composable
+private fun PrefSwitchRow(
+    title: String,
+    description: String,
+    selected: Int,
+    firstLabel: String,
+    secondLabel: String,
+    onFirst: () -> Unit,
+    onSecond: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = TvColors.TextPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = description,
+                color = TvColors.TextSecondary,
+                fontSize = 12.sp,
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyChoiceChip(label = firstLabel, selected = selected == 0, onClick = onFirst)
+            KeyChoiceChip(label = secondLabel, selected = selected == 1, onClick = onSecond)
+        }
+    }
+}
+
+private fun directionLabel(action: DirectionKeyAction, up: Boolean): String = when (action) {
+    DirectionKeyAction.Zap -> if (up) "换到上一个台" else "换到下一个台"
+    DirectionKeyAction.MoveFocus -> "只移动焦点"
 }
 
 @Composable

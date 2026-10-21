@@ -1,6 +1,9 @@
 package com.parentstv.live.ui
 
+import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +27,8 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
@@ -40,9 +45,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.parentstv.live.data.BeijingTime
 import com.parentstv.live.data.ChannelCatalog
 import com.parentstv.live.data.TvChannel
@@ -67,12 +76,15 @@ fun HomeScreen(
         allChannels.filter { it.id in favorites }
     }
     val validCategoryIds = remember(categoryDefs) { categoryDefs.map { it.id }.toSet() }
-    val lastChannel = prefs.lastChannelId?.let { byId[it] }
+    val lastChannel =
+        if (prefs.rememberLastChannel) prefs.lastChannelId?.let { byId[it] } else null
 
     var selectedCategoryId by remember {
         mutableStateOf(
             lastChannel?.category?.takeIf { it in validCategoryIds }
-                ?: prefs.lastCategoryId.takeIf { it in validCategoryIds }
+                ?: (if (prefs.rememberLastChannel) prefs.lastCategoryId else null)?.takeIf {
+                    it in validCategoryIds
+                }
                 ?: categoryDefs.firstOrNull()?.id
                 ?: FAVORITES_ID,
         )
@@ -141,7 +153,8 @@ fun HomeScreen(
         }
     }
     val initialFocusId = remember {
-        prefs.lastChannelId?.takeIf { id -> initialCandidates.any { it.id == id } }
+        (if (prefs.rememberLastChannel) prefs.lastChannelId else null)
+            ?.takeIf { id -> initialCandidates.any { it.id == id } }
             ?: initialCandidates.firstOrNull()?.id
     }
     val initialIndex = remember {
@@ -151,6 +164,12 @@ fun HomeScreen(
     val gridFocus = remember { FocusRequester() }
     val selectedNavFocus = remember { FocusRequester() }
     var firstLayout by remember { mutableStateOf(true) }
+    var confirmExit by remember { mutableStateOf(false) }
+    val activity = LocalContext.current as? Activity
+
+    // 父母按返回键多半只是想收起画面，直接退出会把正在播的频道丢掉，所以先问一句。
+    BackHandler(enabled = !confirmExit) { confirmExit = true }
+
     LaunchedEffect(Unit) {
         delay(180)
         runCatching { gridFocus.requestFocus() }
@@ -251,6 +270,13 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    if (confirmExit) {
+        ExitConfirmDialog(
+            onStay = { confirmExit = false },
+            onExit = { activity?.finish() },
+        )
     }
 }
 
@@ -407,5 +433,61 @@ private fun EmptyState(isFavorites: Boolean) {
             fontSize = 16.sp,
             color = TvColors.TextSecondary,
         )
+    }
+}
+
+@Composable
+private fun ExitConfirmDialog(
+    onStay: () -> Unit,
+    onExit: () -> Unit,
+) {
+    val stayFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(120)
+        runCatching { stayFocus.requestFocus() }
+    }
+    Dialog(
+        onDismissRequest = onStay,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(620.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(TvColors.BackgroundAlt)
+                .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
+                .padding(horizontal = 32.dp, vertical = 30.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "要退出父母TV吗？",
+                color = TvColors.TextPrimary,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "上次看的频道会记住，下次打开直接回到这里（也可以在设置里关掉）。" +
+                    "按遥控器的主页键可以回到电视首页。",
+                color = TvColors.TextSecondary,
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PlayerActionButton(
+                    icon = Icons.Rounded.PlayArrow,
+                    label = "继续观看",
+                    focusRequester = stayFocus,
+                    onClick = onStay,
+                )
+                PlayerActionButton(
+                    icon = Icons.Rounded.PowerSettingsNew,
+                    label = "退出应用",
+                    onClick = onExit,
+                )
+            }
+        }
     }
 }

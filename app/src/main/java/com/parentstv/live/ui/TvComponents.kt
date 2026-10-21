@@ -89,7 +89,7 @@ fun ParentsTvLogo(
         Spacer(Modifier.width(10.dp))
         Column {
             Text(
-                text = "爸妈TV",
+                text = "父母TV",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = TvColors.TextPrimary,

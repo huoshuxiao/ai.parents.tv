@@ -3,6 +3,7 @@ package com.parentstv.live.data
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.TimeZone
@@ -59,5 +60,21 @@ class BeijingTimeTest {
         assertNull(BeijingTime.formatIso("", "yyyy-MM-dd HH:mm"))
         assertNull(BeijingTime.formatIso("2026-10-21 05:17:58", "yyyy-MM-dd HH:mm"))
         assertNull(BeijingTime.formatIso("2026-02-30T05:17:58Z", "yyyy-MM-dd HH:mm"))
+    }
+
+    @Test
+    fun sameInstantInDifferentSpellingsParsesToTheSameMillis() {
+        val zulu = BeijingTime.parseIso("2026-10-21T08:00:00Z")
+        val beijing = BeijingTime.parseIso("2026-10-21T16:00:00+08:00")
+        assertEquals(zulu, beijing)
+        // 同一个时刻，字典序却会把 +08:00 那一串排在后面，所以先后不能按字符串比
+        assertTrue("2026-10-21T16:00:00+08:00" > "2026-10-21T08:00:00Z")
+    }
+
+    @Test
+    fun parseIsoRejectsUnparseableText() {
+        assertNull(BeijingTime.parseIso(""))
+        assertNull(BeijingTime.parseIso("2026-10-21 05:17:58"))
+        assertNull(BeijingTime.parseIso("2026-02-30T05:17:58Z"))
     }
 }

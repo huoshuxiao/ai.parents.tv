@@ -38,4 +38,9 @@ google-services.json
 tools/.cache/
 tools/__pycache__/
 
+# Generated artwork (source art for tools/make_icons.py, not shipped)
+vibe_images/
+
 gradle/
+
+dist/superseded/

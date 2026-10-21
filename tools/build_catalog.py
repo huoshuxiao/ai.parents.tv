@@ -17,9 +17,61 @@ import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import stream_rules  # noqa: E402  (与 App 端 StreamUrl.kt 同一把尺)
+
 BASE = Path(__file__).resolve().parents[1]
 CACHE = BASE / "tools" / ".cache"
 OUT = BASE / "app" / "src" / "main" / "assets" / "channels.json"
+
+# 每频道线路数上限：0 表示不限（实际可用线路有多少就留多少）。
+MAX_STREAMS = 0
+
+# 是否删掉证据档位到 BAD_TIER 及以上的线路（对端自己答复说没有／画面是别的台）。
+# 删完一条线路都不剩的频道，整个从目录里消失。
+DROP_DEAD = True
+BAD_TIER = 4
+
+# tools/health_probe.py 的分片级实测结果（canonical url -> verdict）。
+# 空表示没有健康数据可依据，此时线路顺序退化成「只按来源优先级」。
+HEALTH = {}
+
+# 抽帧看过画面的线路（"频道名|canonical url" -> 结论）。分片能拉到不等于画面就是这台，
+# 所以身份结论优先于分片结论：台标相符才许排第一，画面是别的台/占位页的排到最后。
+IDENTITY = {}
+IDENTITY_GOOD = {"台标相符"}
+
+# 对端根本没能答复的失败：只说明「本机网络到不了」，不说明线路本身坏了。
+NO_REPLY = {"连接超时", "连不上", "响应超时"}
+
+
+def evidence(url, name=""):
+    """线路的证据档位，小的排前面。
+
+    0 抽帧看过、台标与频道名相符；1 拉到过视频分片但画面身份没验；2 没测过；
+    3 本机连不通（换张网可能通）；4 对端明确答复了坏，或画面是别的台/占位页。
+    「没测过」排在「连不通」前面：家里网络与本机不同，未验证的线路仍有机会，
+    而对端已经回了 404/403/网页的线路在什么地方都不会通。
+    """
+    key = f"{name}|{stream_rules.canon(url)}"
+    verdict = IDENTITY.get(key)
+    if verdict:
+        return (0, 0) if verdict in IDENTITY_GOOD else (4, 0)
+    row = HEALTH.get(stream_rules.canon(url))
+    if row is None:
+        return 2, 0
+    verdict = row.get("verdict")
+    if verdict == "可取到分片":
+        return 1, row.get("segment_ms") or 0
+    if verdict in NO_REPLY:
+        return 3, 0
+    return 4, 0
+
+
+def usable(name, url):
+    """这条线路还配留在目录里吗。判据只有这一处，排序和删除都从这里过。"""
+    return (not DROP_DEAD) or evidence(url, name)[0] < BAD_TIER
+
 
 SOURCES = {
     "fanmingming": "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/index.m3u",
@@ -37,6 +89,7 @@ SOURCES = {
 
 # Lower value = stream is tried earlier.
 SOURCE_PRIORITY = {
+    "manual_4k": -1,
     "fanmingming": 0,
     "iptv_org": 1,
     "zbefine": 2,
@@ -45,6 +98,8 @@ SOURCE_PRIORITY = {
     "epg": 5,
     "yang": 6,
     "aptv": 7,
+    # 人工补进已有频道的候选线路：排在最后，不挤掉公开源里已经能播的第一条。
+    "manual_extra": 80,
 }
 
 PROVINCE_ORDER = [
@@ -65,7 +120,7 @@ CATEGORY_NAMES = {
     "international": "国际频道",
 }
 SUBGROUP_ORDER = {
-    "cctv": ["央视", "卫视"],
+    "cctv": ["央视", "卫视", "4K 超高清"],
     "local": PROVINCE_ORDER + ["其他"],
     "hktw": ["香港", "台湾", "澳门", "海外华人"],
     "featured": ["影视轮播", "NewTV", "CHC", "少儿"],
@@ -434,15 +489,22 @@ class Builder:
                 key=lambda s: (
                     s["ipv6"],
                     s["geo"],
+                    evidence(s["url"], ch["name"]),
                     SOURCE_PRIORITY.get(s["source"], 50),
                     s["seq"],
                 ),
             )
             urls = []
+            keys = set()
             for s in streams:
-                if s["url"] not in urls:
-                    urls.append(s["url"])
-                if len(urls) >= 6:
+                key = stream_rules.canon(s["url"])
+                if key in keys:
+                    continue
+                if not usable(ch["name"], s["url"]):
+                    continue
+                keys.add(key)
+                urls.append(s["url"])
+                if MAX_STREAMS and len(urls) >= MAX_STREAMS:
                     break
             if not urls:
                 continue
@@ -537,17 +599,40 @@ def add_satellite(builder, entry):
     return True
 
 
+ID_COUNTRY = re.compile(r'tvg-id="[^".]*\.([a-zA-Z]{2,3})(?:@[^"]*)?"')
+GREATER_CHINA = {"cn", "hk", "mo", "tw"}
+
+
+def id_country(raw: str):
+    """iptv-org 的 tvg-id 形如 `AnadoluNetTV.tr@SD`，尾巴上就是国家码。"""
+    m = ID_COUNTRY.search(raw or "")
+    return m.group(1).lower() if m else None
+def region_suffix_matches(alias, key, spaced):
+    """CJK 别名按后缀匹配（“某某卫视”）；纯 ASCII 短别名必须整词命中，
+    否则 RCCTV 会被当成“中视”、BibleTV 会被当成“台视”。"""
+    if not key.endswith(alias):
+        return False
+    if alias.isascii():
+        return bool(re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", spaced))
+    return True
+
+
 def add_region(builder, entry):
     n = norm_key(entry["name"])
     hit = REGION_ALIAS.get(n)
     if not hit:
+        spaced = match_key(entry["name"])
         for alias, value in REGION_SUFFIX:
-            if len(alias) >= 3 and n.endswith(alias):
+            if len(alias) >= 3 and region_suffix_matches(alias, n, spaced):
                 hit = value
                 break
     if not hit:
         return False
     region, display, idx = hit
+    if region in ("香港", "台湾", "澳门"):
+        country = id_country(entry.get("raw", ""))
+        if country and country not in GREATER_CHINA:
+            return False
     builder.add(display, "hktw", region, entry["url"], logo=entry["logo"],
                 source=entry["source"], order=idx, raw=entry["raw"],
                 key_name=display)
@@ -860,7 +945,96 @@ def process_aptv(builder, entries):
             add_sports(builder, e, subgroup="国内体育", display="五星体育", order=0)
 
 
+# 用户 2026-10-21 点名的 4K 频道。判定出自 tools/.cache/linecheck/4k/candidates.json：
+# 只收「播放列表取到、并且真的拉到一个分片」的线路（本机网络实测）。
+# 没进来的几条都是假源：江苏卫视4K 那个中转脚本三轮里两轮返回与广告文件同 MD5 的 MP4；
+# CCTV-8K、CCTV-16 4K、北京/浙江/山东/四川/深圳/湖南卫视4K 要么分片全 404，要么只有 IPv6
+# （本机没有 IPv6 出口，测不到就等于没验过，不加）。
+MANUAL_4K = [
+    ("东方卫视 4K", ["https://bp-resource-dfl.bestv.cn/148/3/video.m3u8"]),
+    ("河北 4K", ["http://event.pull.hebtv.com/live/live101.m3u8"]),
+    ("苏州 4K", [
+        "http://tylive.kan0512.com/norecord/csztv4k_4k.m3u8",
+        "http://live-auth.51kandianshi.com/szgd/csztv4k_hd.m3u8",
+    ]),
+    ("咪咕体育 4K", [
+        "http://gslbserv.itv.cmvideo.cn:80/1.m3u8?channel-id=FifastbLive"
+        "&Contentid=3000000010000005180&livemode=1&stbId=yu&mode=1",
+    ]),
+]
+# 台标靠抽帧认，不靠列表里写的名字：
+# 3221227021 画面左上角是「CCTV5 体育」，正在播 WTT 中国大满贯女双决赛；
+# 3221226899 右上角「咪咕视界」水印，足球转播。两条都是 2026-10-21 18:41 抽到帧、
+# 18:52 再各自取首分片算 MD5（互不相同）确认在出真画面。
+MANUAL_EXTRA = [
+    ("咪咕体育", "sports", "咪咕直播",
+     "http://39.134.61.218/PLTV/88888888/224/3221226899/index.m3u8"),
+    ("咪咕体育", "sports", "咪咕直播",
+     "http://39.134.61.218/PLTV/88888888/224/3221226901/index.m3u8"),
+    ("咪咕体育", "sports", "咪咕直播",
+     "http://39.134.61.218/PLTV/88888888/224/3221227120/index.m3u8"),
+    ("CCTV-4K 超高清", "cctv", "央视", "http://8.138.7.223/tv/cctvnews.php?id=cctv4k"),
+]
+
+
+def add_manual_channels(builder):
+    for order, (display, urls) in enumerate(MANUAL_4K):
+        for url in urls:
+            builder.add(display, "cctv", "4K 超高清", url, source="manual_4k", order=order)
+    for display, category, subgroup, url in MANUAL_EXTRA:
+        builder.add(display, category, subgroup, url, source="manual_extra")
+
+
+def load_health(path):
+    """读 health_probe.py 追加写的 jsonl。同一条线路多次探测时，后写的那次算数。"""
+    rows = {}
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            key = row.get("canonical") or stream_rules.canon(row.get("url", ""))
+            if key:
+                rows[key] = row
+    return rows
+
+
+def load_identity(path):
+    """读抽帧复核结论（"频道名|canonical url" -> 结论），同样后写的算数。"""
+    rows = {}
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            key = f"{row.get('name', '')}|{row.get('canonical') or stream_rules.canon(row.get('url', ''))}"
+            if row.get("verdict"):
+                rows[key] = row["verdict"]
+    return rows
+
+
 def build(args):
+    global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD
+    MAX_STREAMS = max(0, int(args.max_streams))
+    DROP_DEAD = not args.keep_dead
+    out_path = Path(args.out) if args.out else OUT
+    health_path = Path(args.health)
+    HEALTH = load_health(health_path) if health_path.exists() else {}
+    identity_path = Path(args.identity)
+    IDENTITY = load_identity(identity_path) if identity_path.exists() else {}
+    if HEALTH or IDENTITY:
+        print(f"[evidence] {len(HEALTH)} 条分片级读数、{len(IDENTITY)} 条抽帧身份结论，"
+              f"线路按「抽帧认过台标 > 取到过分片 > 没测过 > 本机连不通 > 已确认坏」排")
+    else:
+        print(f"[evidence] 没有可用读数（{health_path}），线路只按来源优先级排")
     if not args.offline:
         ensure_sources()
     entries = {}
@@ -884,15 +1058,18 @@ def build(args):
     process_epg(builder, entries["epg_hk"] + entries["epg_tw"] + entries["epg_mo"])
     process_iptv_org(builder, entries["iptv_org"])
     process_aptv(builder, entries["aptv"])
+    add_manual_channels(builder)
 
     channels = builder.final_channels()
     if not channels:
         raise SystemExit("catalog is empty")
 
     # 公开列表缺少稳定来源的地方台，用人工实测线路补齐。
-    # 首条为已实测可播；其余为待用户在电视上验证的候选（本机构络测不通，多为省内运营商单播）。
+    # 排序按用户 2026-10-21 在电视上的实测结论：只有 dassby 那条能出画面（但会卡），
+    # 其余四条（广电 HLS/原始 TS、辽宁移动三条单播）在电视上全部播不出来，退为备用。
     manual_streams = {
         "辽宁体育": [
+            "http://dassby.qqff.top:99/live/辽宁体育/index.m3u8",
             "http://120.76.248.139/live/bfgd/4200000611.m3u8",
             "http://httplive.slave.bfgd.com.cn:14311/playurl?playtype=live&protocol=http"
             "&accesstoken=R5F2408FEU3198804BK78052214IE73560DFP2BF4M340CE68V0Z339CBW1626D4D261E46FEA"
@@ -902,21 +1079,36 @@ def build(args):
             "http://39.135.129.162/hwottcdn.ln.chinamobile.com/PLTV/3/224/3221226764/index.m3u8",
         ],
     }
+    # CCTV-5 体育：辽宁移动网关这条是抽帧看过台标的真 CCTV5 画面（见 MANUAL_EXTRA 上方注释），
+    # 排在公开列表前面，体育大赛期间比源多的那几条更稳。
+    manual_streams["CCTV-5 体育"] = [
+        "http://39.134.61.218/PLTV/88888888/224/3221227021/index.m3u8",
+    ]
     # 本机实测端口不通/分片 404 的主机，公开列表里仍会带回来，按前缀剔除。
+    # dassby.qqff.top 不在此列：本机网络测不通，但用户在电视上实测能出画面。
     dead_stream_prefixes = {
         "辽宁体育": (
             "http://59.44.102.18:8888/",
             "http://42.176.185.28:9901/",
-            "http://dassby.qqff.top:99/",
         ),
     }
     for ch in channels:
         extra = manual_streams.get(ch["name"])
         if extra:
-            ch["streams"] = list(dict.fromkeys(extra + ch["streams"]))[:8]
+            ch["streams"] = list(dict.fromkeys(extra + ch["streams"]))
         dead = dead_stream_prefixes.get(ch["name"])
         if dead:
             ch["streams"] = [s for s in ch["streams"] if not s.startswith(dead)]
+
+    # 人工前置的那几条不走 final_channels，这里再按同一个判据扫一遍，
+    # 免得「实测播不出来的人工备用线」从后门回到目录里。删空的频道整个去掉。
+    if DROP_DEAD:
+        survivors = []
+        for ch in channels:
+            ch["streams"] = [s for s in ch["streams"] if usable(ch["name"], s)]
+            if ch["streams"]:
+                survivors.append(ch)
+        channels = survivors
 
     present = defaultdict(set)
     for ch in channels:
@@ -935,10 +1127,10 @@ def build(args):
         "categories": categories,
         "channels": channels,
     }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(catalog, ensure_ascii=False, indent=1), encoding="utf-8")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    print(f"\n[write] {OUT} ({OUT.stat().st_size / 1024:.0f} KiB)")
+    print(f"\n[write] {out_path} ({out_path.stat().st_size / 1024:.0f} KiB)")
     print(f"[stats] {len(channels)} channels")
     for cat in CATEGORY_ORDER:
         counts = defaultdict(int)
@@ -954,7 +1146,8 @@ def build(args):
         "北京卫视", "东方卫视", "湖南卫视", "广东卫视", "深圳卫视",
         "翡翠台", "明珠台", "凤凰中文", "凤凰资讯", "TVBS新闻", "澳视澳门",
         "NewTV 超级电影", "CHC家庭影院", "CHC动作电影",
-        "五星体育", "咪咕直播 4K-1", "纬来体育", "辽宁体育",
+        "五星体育", "咪咕直播 4K-1", "辽宁体育",
+        "东方卫视 4K", "河北 4K", "苏州 4K", "咪咕体育 4K", "咪咕体育",
         "Discovery 探索频道", "BBC News BBC新闻", "FOX News 福克斯新闻",
         "CNN 国际新闻", "National Geographic 国家地理",
     ]
@@ -992,4 +1185,16 @@ def ensure_sources():
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true", help="use only cached playlists")
+    ap.add_argument("--max-streams", type=int, default=0,
+                    help="每频道线路数上限，0 表示不限（默认）")
+    ap.add_argument("--out", type=Path, default=None,
+                    help="输出到指定路径，默认写 app/src/main/assets/channels.json")
+    ap.add_argument("--health", type=Path,
+                    default=CACHE / "health" / "line_health.jsonl",
+                    help="分片级健康探测结果（jsonl），用于把实测能播的线路排到最前")
+    ap.add_argument("--identity", type=Path,
+                    default=CACHE / "linecheck" / "identity_review.jsonl",
+                    help="抽帧复核的台标身份结论（jsonl），优先于分片级结论决定线路顺序")
+    ap.add_argument("--keep-dead", action="store_true",
+                    help="保留「对端明确答复了坏／画面是别的台」的线路（默认删掉，删空的频道整个消失）")
     raise SystemExit(build(ap.parse_args()))
