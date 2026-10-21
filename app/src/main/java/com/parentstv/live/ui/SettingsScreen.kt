@@ -375,7 +375,7 @@ private fun KeySettingsDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DirectionKeyAction.values().forEachIndexed { position, action ->
                     KeyChoiceChip(
-                        label = directionLabel(action, up = true),
+                        label = directionLabel(action),
                         selected = upAction == action,
                         focusRequester = if (position == 0) firstFocus else null,
                         onClick = {
@@ -395,7 +395,7 @@ private fun KeySettingsDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DirectionKeyAction.values().forEach { action ->
                     KeyChoiceChip(
-                        label = directionLabel(action, up = false),
+                        label = directionLabel(action),
                         selected = downAction == action,
                         onClick = {
                             downAction = action
@@ -576,8 +576,9 @@ private fun PrefSwitchRow(
     }
 }
 
-private fun directionLabel(action: DirectionKeyAction, up: Boolean): String = when (action) {
-    DirectionKeyAction.Zap -> if (up) "换到上一个台" else "换到下一个台"
+private fun directionLabel(action: DirectionKeyAction): String = when (action) {
+    DirectionKeyAction.ZapPrevious -> "换到上一个台"
+    DirectionKeyAction.ZapNext -> "换到下一个台"
     DirectionKeyAction.MoveFocus -> "只移动焦点"
 }
 

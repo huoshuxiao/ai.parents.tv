@@ -215,6 +215,21 @@ fun PlayerScreen(
 
     fun zap(delta: Int) = jumpTo(index + delta)
 
+    // 上、下键各自可配成「上一个台／下一个台／只移动焦点」，返回 false 表示按键交还给焦点系统。
+    fun zapUpOrDown(action: DirectionKeyAction): Boolean = when (action) {
+        DirectionKeyAction.ZapPrevious -> {
+            zap(-1)
+            true
+        }
+
+        DirectionKeyAction.ZapNext -> {
+            zap(1)
+            true
+        }
+
+        DirectionKeyAction.MoveFocus -> false
+    }
+
     // 本频道所有线路都试过一轮仍起不了画面：自动挪到下一个还没试过的频道。
     // 一圈回到原处说明队列里每个频道都失败过，返回 false 让界面给出总失败提示，
     // 否则会在几个坏频道之间无限转圈。
@@ -499,18 +514,16 @@ fun PlayerScreen(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionUp -> {
-                        if (!controlsVisible && prefs.upKeyAction == DirectionKeyAction.Zap) {
-                            zap(-1)
-                            true
+                        if (!controlsVisible) {
+                            zapUpOrDown(prefs.upKeyAction)
                         } else {
                             false
                         }
                     }
 
                     Key.DirectionDown -> {
-                        if (!controlsVisible && prefs.downKeyAction == DirectionKeyAction.Zap) {
-                            zap(1)
-                            true
+                        if (!controlsVisible) {
+                            zapUpOrDown(prefs.downKeyAction)
                         } else {
                             false
                         }
@@ -576,9 +589,6 @@ fun PlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    // PlayerView 默认可聚焦，遥控器一按方向键焦点就掉进视频层、回不到底栏。
-                    isFocusable = false
-                    isFocusableInTouchMode = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setKeepContentOnPlayerReset(true)
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
@@ -654,7 +664,7 @@ fun PlayerScreen(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "${index + 1} / ${queue.size}",
+                        text = "线路 ${streamIndex + 1} / ${channel.streams.size}",
                         color = Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -663,7 +673,7 @@ fun PlayerScreen(
                     Text(
                         text = when {
                             statusText.isNotBlank() -> statusText
-                            isPlaying -> "线路 ${streamIndex + 1} / ${channel.streams.size} · 直播中"
+                            isPlaying -> "直播中"
                             else -> "已暂停"
                         },
                         color = if (statusText.isNotBlank()) TvColors.Accent else Color(0xFFCBD5E1),
@@ -1056,8 +1066,16 @@ private fun ProgramRow(
 }
 
 private fun playerKeyHint(prefs: TvPrefs): String {
-    val up = if (prefs.upKeyAction == DirectionKeyAction.Zap) "上键换台" else "上键移焦点"
-    val down = if (prefs.downKeyAction == DirectionKeyAction.Zap) "下键换台" else "下键移焦点"
+    val up = when (prefs.upKeyAction) {
+        DirectionKeyAction.ZapPrevious -> "上键上一个台"
+        DirectionKeyAction.ZapNext -> "上键下一个台"
+        DirectionKeyAction.MoveFocus -> "上键移焦点"
+    }
+    val down = when (prefs.downKeyAction) {
+        DirectionKeyAction.ZapPrevious -> "下键上一个台"
+        DirectionKeyAction.ZapNext -> "下键下一个台"
+        DirectionKeyAction.MoveFocus -> "下键移焦点"
+    }
     val back = when (prefs.backKeyAction) {
         BackKeyAction.HideControls -> "返回键收起控制栏"
         BackKeyAction.BackToList -> "返回键返回列表"
@@ -1111,7 +1129,7 @@ private fun LinePickerDialog(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = "${channel.name} · 共 ${channel.streams.size} 条 · 响应为本次取流耗时",
+                text = "${channel.name} · 共 ${channel.streams.size} 条 · 绿=清单和画面都取到 · 黄=清单通但画面取不到",
                 color = TvColors.TextSecondary,
                 fontSize = 13.sp,
                 maxLines = 1,
@@ -1148,7 +1166,7 @@ private fun LinePickerDialog(
                     text = if (probing) {
                         "正在检测 ${probes.size}/${channel.streams.size}"
                     } else {
-                        "响应越快通常越容易起播 · 时间均为北京时间"
+                        "只有绿色那条真取到过画面 · 时间均为北京时间"
                     },
                     color = TvColors.TextSecondary.copy(alpha = 0.8f),
                     fontSize = 12.sp,
@@ -1185,15 +1203,17 @@ private fun LineChoiceRow(
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(13.dp)
     val responseText = when {
-        result?.responseMs != null -> "响应 ${result.responseMs} ms"
+        result?.playable == true -> "可用 · 清单 ${result.responseMs} ms · 画面 ${result.segmentMs} ms"
+        result?.responseMs != null -> "清单通，画面取不到（${result.error}）"
         result?.error != null -> result.error
         probing -> "检测中…"
         else -> "未检测"
     }
     val responseColor = when {
-        result?.responseMs != null -> TvColors.Success
-        result?.error != null -> Color(0xFFFF8A80)
-        else -> TvColors.TextSecondary
+        result?.playable == true -> TvColors.Success
+        // 清单通了不代表能看，绝不能给绿色（真机上「线路 1 显示可用却播不出来」就是这么来的）。
+        result?.responseMs != null -> TvColors.Accent
+        else -> Color(0xFFFF8A80)
     }
 
     Row(

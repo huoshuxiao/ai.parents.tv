@@ -1084,6 +1084,12 @@ def build(args):
     manual_streams["CCTV-5 体育"] = [
         "http://39.134.61.218/PLTV/88888888/224/3221227021/index.m3u8",
     ]
+    # 「西藏卫视」的 0111_1 抽帧认台标是**四川卫视**（10-21 21:31 现抽，画面左上角写着四川卫视），
+    # 而四川卫视自己那两条本机都连不通 ⇒ 用户 10-21 选「挪到四川卫视名下」：
+    # 这条前置到四川卫视第 1 位，同时从西藏卫视摘掉（摘法见下面 reassign_prefixes）。
+    manual_streams["四川卫视"] = [
+        "http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0",
+    ]
     # 本机实测端口不通/分片 404 的主机，公开列表里仍会带回来，按前缀剔除。
     # dassby.qqff.top 不在此列：本机网络测不通，但用户在电视上实测能出画面。
     dead_stream_prefixes = {
@@ -1091,6 +1097,8 @@ def build(args):
             "http://59.44.102.18:8888/",
             "http://42.176.185.28:9901/",
         ),
+        # 这一条不是死线，是**挂错台**：对端给的是四川卫视的画面。
+        "西藏卫视": ("http://112.27.5.218:9901/tsfile/live/0111_1.m3u8",),
     }
     for ch in channels:
         extra = manual_streams.get(ch["name"])

@@ -140,6 +140,38 @@ object DeadStreams {
 }
 
 /**
+ * 挂在 A 台名下、抽帧认台标其实是 B 台画面的线。公开源会反复把它带回错的频道，
+ * 只改内置目录挡不住下一次自动更新（设备上 00:04 现读：这条线仍在「西藏卫视」第 1 条），
+ * 所以合并时按规范地址改挂到真正的频道，并放在最前面。
+ */
+object RelabeledStreams {
+
+    /** 原始写法 → 台标实测真正的频道名。匹配走 [StreamUrl.canonical]，转义/查询串变体一并认。 */
+    private val targets: List<Pair<String, String>> = listOf(
+        // 10-21 21:31 与 22:31 两次抽帧，画面左上角都是「四川卫视」台标。
+        "http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0" to "四川卫视",
+    )
+
+    private fun keyOf(url: String) = StreamUrl.canonical(url)
+
+    private val byKey: Map<String, String> = targets.associate { (url, channel) -> keyOf(url) to channel }
+
+    /** 这条地址真身属于哪个频道；null 表示没有改挂记录。 */
+    fun trueChannel(stream: String): String? = byKey[keyOf(stream)]
+
+    /** 在 [channelName] 名下看到它就该摘掉——它出的是别的台的画面。 */
+    fun belongsElsewhere(channelName: String, stream: String): Boolean {
+        val owner = trueChannel(stream) ?: return false
+        return ChannelName.normalize(owner) != ChannelName.normalize(channelName)
+    }
+
+    /** 该改挂进 [channelName] 的线路（保留原始写法，排在频道线路列表最前）。 */
+    fun linesFor(channelName: String): List<String> = targets
+        .filter { ChannelName.normalize(it.second) == ChannelName.normalize(channelName) }
+        .map { it.first }
+}
+
+/**
  * 不联网也能断定播不出来的三类：ExoPlayer 没有对应解复用器的容器、鉴权参数绑死在
  * 别人的机顶盒或手机号上、URL 里写死的过期时刻已经过去。
  * 判据与 tools/stream_rules.py 逐条对齐，对拍夹具是 app/src/test/resources/stream_rules.json。

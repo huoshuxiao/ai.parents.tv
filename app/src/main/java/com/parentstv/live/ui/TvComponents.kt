@@ -260,22 +260,13 @@ fun ChannelCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(7.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (focused) TvColors.Accent else TvColors.Success),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = channel.subgroup.ifBlank { "直播" },
-                    fontSize = 13.sp,
-                    color = TvColors.TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = channel.subgroup.ifBlank { "直播" },
+                fontSize = 13.sp,
+                color = TvColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (isFavorite) {
             Icon(

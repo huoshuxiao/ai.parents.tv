@@ -28,12 +28,14 @@ enum class BackKeyAction {
  * 有人习惯上键翻到上一个台，也有人只想要焦点移动。
  */
 enum class DirectionKeyAction {
-    Zap,
+    ZapPrevious,
+    ZapNext,
     MoveFocus;
 
     companion object {
-        fun from(value: String?): DirectionKeyAction =
-            values().firstOrNull { it.name == value } ?: Zap
+        // 老版本存的是 "Zap"，这里按不上匹配处理成各键自己的默认值（上＝上一个台，下＝下一个台）。
+        fun from(value: String?, fallback: DirectionKeyAction): DirectionKeyAction =
+            values().firstOrNull { it.name == value } ?: fallback
     }
 }
 
@@ -62,13 +64,13 @@ class TvPrefs(context: Context) {
         }
 
     var upKeyAction: DirectionKeyAction
-        get() = DirectionKeyAction.from(sp.getString(KEY_UP_ACTION, null))
+        get() = DirectionKeyAction.from(sp.getString(KEY_UP_ACTION, null), DirectionKeyAction.ZapPrevious)
         set(value) {
             sp.edit().putString(KEY_UP_ACTION, value.name).apply()
         }
 
     var downKeyAction: DirectionKeyAction
-        get() = DirectionKeyAction.from(sp.getString(KEY_DOWN_ACTION, null))
+        get() = DirectionKeyAction.from(sp.getString(KEY_DOWN_ACTION, null), DirectionKeyAction.ZapNext)
         set(value) {
             sp.edit().putString(KEY_DOWN_ACTION, value.name).apply()
         }
@@ -103,6 +105,19 @@ class TvPrefs(context: Context) {
             sp.edit().putString(KEY_BACK_ACTION, value.name).apply()
         }
 
+    /**
+     * 一条线路卡多久就算失败、换下一条。用户 2026-10-22 要求做成可配、默认 10 秒：
+     * 原来起播阶段写死 25 秒，坏线路一条条试下来等得太久。
+     */
+    var lineSwitchSeconds: Int
+        get() = sp.getInt(KEY_LINE_SWITCH_SECONDS, DEFAULT_LINE_SWITCH_SECONDS)
+            .coerceIn(MIN_LINE_SWITCH_SECONDS, MAX_LINE_SWITCH_SECONDS)
+        set(value) {
+            sp.edit()
+                .putInt(KEY_LINE_SWITCH_SECONDS, value.coerceIn(MIN_LINE_SWITCH_SECONDS, MAX_LINE_SWITCH_SECONDS))
+                .apply()
+        }
+
     fun subgroupFor(categoryId: String): String? =
         sp.getString("subgroup_$categoryId", null)
 
@@ -133,5 +148,10 @@ class TvPrefs(context: Context) {
         const val KEY_MENU_ACTION = "menu_action"
         const val KEY_BACK_ACTION = "back_action"
         const val KEY_LINE_PREFIX = "line_"
+        const val KEY_LINE_SWITCH_SECONDS = "line_switch_seconds"
+
+        const val DEFAULT_LINE_SWITCH_SECONDS = 10
+        const val MIN_LINE_SWITCH_SECONDS = 5
+        const val MAX_LINE_SWITCH_SECONDS = 60
     }
 }

@@ -68,10 +68,8 @@ class CatalogUpdater(private val context: Context) {
         val channels = base.channels.map { channel ->
             val fresh = discovered[normalize(channel.name)].orEmpty()
                 .sortedBy { StreamUrl.isIpv6(it) }
-            val merged = (channel.streams + fresh)
-                .filterNot { DeadStreams.isDead(it) }
-                .filterNot { StreamRules.neverPlayable(it) != null }
-                .distinctBy { StreamUrl.canonical(it) }
+            // 台标实测属于本台、却常被公开源挂到别名下的线，改挂进来并排在最前。
+            val merged = CatalogMerge.streams(channel.name, channel.streams, fresh)
             added += merged.count { kept ->
                 channel.streams.none { StreamUrl.sameLine(it, kept) }
             }
@@ -209,4 +207,19 @@ class CatalogUpdater(private val context: Context) {
             listOf("https://raw.githubusercontent.com/YuanHsing/freed/master/tv/live.txt"),
         )
     }
+}
+
+/**
+ * 单个频道的线路合并，抽成不依赖 Context 的纯函数：
+ * 改挂规则是设备端自动更新里最后才生效的一环，光在真机上等一次「8 个源全不可达」是验不出来的。
+ */
+internal object CatalogMerge {
+
+    /** 改挂进本台的线排最前（台标实测过的那条），再依次是内置线路和公开源新发现的。 */
+    fun streams(channelName: String, packaged: List<String>, fresh: List<String>): List<String> =
+        (RelabeledStreams.linesFor(channelName) + packaged + fresh)
+            .filterNot { DeadStreams.isDead(it) }
+            .filterNot { StreamRules.neverPlayable(it) != null }
+            .filterNot { RelabeledStreams.belongsElsewhere(channelName, it) }
+            .distinctBy { StreamUrl.canonical(it) }
 }
