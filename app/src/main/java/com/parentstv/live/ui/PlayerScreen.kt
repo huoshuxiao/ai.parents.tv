@@ -34,9 +34,8 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.List
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SkipNext
@@ -137,11 +136,10 @@ fun PlayerScreen(
     var retryNonce by remember(channel.id) { mutableIntStateOf(0) }
     var reconnectsOnLine by remember(channel.id) { mutableIntStateOf(0) }
     var lastRecoveryAt by remember(channel.id) { mutableLongStateOf(0L) }
-    var hasPlayed by remember(channel.id) { mutableStateOf(false) }
     // 本台里已经真出过画面的线路号。换线只允许发生在没出过画面的线路上（见 LineRecovery）。
     val playedLines = remember(channel.id) { mutableSetOf<Int>() }
     var errorMessage by remember(channel.id) { mutableStateOf<String?>(null) }
-    var statusText by remember(channel.id) { mutableStateOf("正在连接…") }
+    var statusText by remember(channel.id) { mutableStateOf(connectingText(channel.name, streamIndex)) }
     var videoSize by remember(channel.id, streamIndex) { mutableStateOf<VideoSize?>(null) }
     // 本次进入播放器后已经试过、且所有线路都起不了画面的频道。自动换台要靠它决定什么时候停手。
     val unplayableChannels = remember { mutableSetOf<String>() }
@@ -151,6 +149,9 @@ fun PlayerScreen(
     var zapNotice by remember { mutableStateOf(false) }
     var aspectIndex by remember { mutableIntStateOf(0) }
     var linePickerVisible by remember { mutableStateOf(false) }
+    var channelPickerVisible by remember { mutableStateOf(false) }
+    // 遥控器数字键选台：数字先进缓冲区，停手 2.5 秒后当成台号跳过去。
+    var digitEntry by remember { mutableStateOf("") }
     var probeNonce by remember { mutableIntStateOf(0) }
     var probingLines by remember { mutableStateOf(false) }
     val lineProbes = remember { mutableStateMapOf<Int, StreamProbe.Result>() }
@@ -166,7 +167,7 @@ fun PlayerScreen(
     }
 
     val rootFocus = remember { FocusRequester() }
-    val playFocus = remember { FocusRequester() }
+    val barFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
     val aspectModes = remember {
         listOf(
@@ -206,10 +207,11 @@ fun PlayerScreen(
         if (target == index) return
         index = target
         errorMessage = null
-        statusText = "正在连接…"
+        statusText = connectingText(queue[target].name, 0)
         isBuffering = true
         zapNotice = true
         linePickerVisible = false
+        channelPickerVisible = false
         onChannelChanged(queue[target])
     }
 
@@ -250,7 +252,7 @@ fun PlayerScreen(
         return true
     }
 
-    fun chooseLine(lineIndex: Int) {
+    fun chooseLine(lineIndex: Int, keepControlsHidden: Boolean = false) {
         val url = channel.streams.getOrNull(lineIndex) ?: return
         prefs.setLine(channel.id, url)
         linePickerVisible = false
@@ -263,7 +265,21 @@ fun PlayerScreen(
         errorMessage = null
         statusText = "正在尝试线路 ${lineIndex + 1}…"
         isBuffering = true
-        controlsVisible = true
+        controlsVisible = !keepControlsHidden
+    }
+
+    // 左右键换线走的是与「选线」面板同一条路（chooseLine），
+    // 免得记住线路、清零重连计数这些动作在两处各写一遍、日后走岔。
+    fun stepLine(delta: Int) {
+        val total = channel.streams.size
+        if (total <= 1) {
+            statusText = "这个台只有 1 条线路"
+            zapNotice = true
+            return
+        }
+        val target = ((streamIndex + delta) % total + total) % total
+        chooseLine(target, keepControlsHidden = true)
+        zapNotice = true
     }
 
     LaunchedEffect(channel.id) {
@@ -308,13 +324,14 @@ fun PlayerScreen(
         if (now - lastRecoveryAt < RECOVERY_DEBOUNCE_MS) return
         lastRecoveryAt = now
         // 已经出过画面的线路只在原地重连，绝不自动换线、绝不自动换台（用户 2026-10-21 指令）；
-        // 只有从没出过画面的线路才走「重连 2 次 → 换下一条 → 换频道」。
+        // 没出过画面的线路按设置里的等待时间到点就换下一条（用户 2026-10-22 要求默认 10 秒），
+        // 所以这一臂传的重连次数是 0——不然「10 秒换线」实际要等 30 秒。
         val played = streamIndex in playedLines
         when (
             LineRecovery.action(
                 lineHasPlayed = played,
                 reconnectsOnLine = reconnectsOnLine,
-                sameLineReconnects = SAME_LINE_RECONNECTS,
+                sameLineReconnects = if (played) SAME_LINE_RECONNECTS else 0,
                 lineIndex = streamIndex,
                 lastLineIndex = channel.streams.lastIndex,
             )
@@ -362,8 +379,8 @@ fun PlayerScreen(
                 if (exoPlayer.isPlaying) playingMs += 1_000
             }
             if (playingMs >= RECONNECT_AFTER_STABLE_MS) reconnectsOnLine = 0
-            // 起播阶段首片可能很慢，容忍 25 秒；已经出过画面后再卡 10 秒就重连。
-            val limit = if (hasPlayed) PLAYBACK_STALL_LIMIT_MS else CONNECT_STALL_LIMIT_MS
+            // 起播阶段按设置里配的等待时间算失败（默认 10 秒）；已经出过画面后卡住的时间沿用同一档。
+            val limit = prefs.lineSwitchSeconds * 1_000L
             if (stalledMs >= limit) {
                 tryNextLine("线路长时间无响应，请检查网络后重试")
                 break
@@ -382,7 +399,11 @@ fun PlayerScreen(
         }
         errorMessage = null
         isBuffering = true
-        statusText = if (streamIndex == 0) "正在连接…" else "正在尝试线路 ${streamIndex + 1}…"
+        statusText = if (streamIndex == 0) {
+            connectingText(channel.name, 0)
+        } else {
+            "正在尝试线路 ${streamIndex + 1}…"
+        }
         // 回调里要记的是「本次连接试图播的这条线」，闭包捕获住编号，别等状态变了再读。
         val lineBeingPlayed = streamIndex
 
@@ -398,7 +419,6 @@ fun PlayerScreen(
                         isBuffering = false
                         statusText = ""
                         errorMessage = null
-                        hasPlayed = true
                         playedLines.add(lineBeingPlayed)
                         // 自动换线换到的这条才是「这个频道实际能看的线路」，
                         // 记住它，下次进台直接用，不必从第 1 条重头试。
@@ -423,7 +443,6 @@ fun PlayerScreen(
                 if (playing) {
                     isBuffering = false
                     statusText = ""
-                    hasPlayed = true
                     playedLines.add(lineBeingPlayed)
                     prefs.setLine(channel.id, url)
                 }
@@ -461,10 +480,35 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, errorMessage, streamIndex, linePickerVisible, guideVisible) {
-        if (controlsVisible && isPlaying && errorMessage == null && !linePickerVisible && !guideVisible) {
-            delay(5_000)
+    LaunchedEffect(
+        controlsVisible,
+        isPlaying,
+        errorMessage,
+        streamIndex,
+        linePickerVisible,
+        channelPickerVisible,
+        guideVisible,
+    ) {
+        val blocked = linePickerVisible || channelPickerVisible || guideVisible ||
+            errorMessage != null || !isPlaying
+        if (controlsVisible && !blocked) {
+            delay(CONTROLS_AUTO_HIDE_MS)
             controlsVisible = false
+        }
+    }
+
+    // 数字键停手 2.5 秒后把这串数字当台号用：本组队列里第 N 个台。
+    LaunchedEffect(digitEntry) {
+        val typed = digitEntry
+        if (typed.isEmpty()) return@LaunchedEffect
+        delay(DIGIT_ENTRY_TIMEOUT_MS)
+        digitEntry = ""
+        val number = typed.toIntOrNull() ?: return@LaunchedEffect
+        if (number in 1..queue.size) {
+            if (number - 1 != index) jumpTo(number - 1)
+        } else {
+            statusText = "本组只有 ${queue.size} 个台，没有第 $number 台"
+            zapNotice = true
         }
     }
 
@@ -475,12 +519,12 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, errorMessage, linePickerVisible, guideVisible) {
-        if (linePickerVisible || guideVisible) return@LaunchedEffect
+    LaunchedEffect(controlsVisible, errorMessage, linePickerVisible, channelPickerVisible, guideVisible) {
+        if (linePickerVisible || channelPickerVisible || guideVisible) return@LaunchedEffect
         delay(80)
         when {
             errorMessage != null -> runCatching { retryFocus.requestFocus() }
-            controlsVisible -> runCatching { playFocus.requestFocus() }
+            controlsVisible -> runCatching { barFocus.requestFocus() }
             else -> runCatching { rootFocus.requestFocus() }
         }
     }
@@ -492,6 +536,10 @@ fun PlayerScreen(
         }
         if (linePickerVisible) {
             linePickerVisible = false
+            return@BackHandler
+        }
+        if (channelPickerVisible) {
+            channelPickerVisible = false
             return@BackHandler
         }
         if (errorMessage != null ||
@@ -529,6 +577,24 @@ fun PlayerScreen(
                         }
                     }
 
+                    Key.DirectionLeft -> {
+                        if (!controlsVisible) {
+                            stepLine(-1)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+
+                    Key.DirectionRight -> {
+                        if (!controlsVisible) {
+                            stepLine(1)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+
                     Key.ChannelUp -> {
                         zap(-1)
                         true
@@ -539,9 +605,12 @@ fun PlayerScreen(
                         true
                     }
 
+                    // OK 键不再担播放/暂停：控制栏隐藏时它打开「选择频道」，
+                    // 控制栏已经显示时交回焦点系统，让 OK 能按下底栏里聚焦的那个按钮。
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         if (!controlsVisible) {
                             controlsVisible = true
+                            channelPickerVisible = true
                             true
                         } else {
                             false
@@ -581,7 +650,17 @@ fun PlayerScreen(
                         }
                     }
 
-                    else -> false
+                    else -> {
+                        val digit = DIGIT_KEYS[event.key]
+                        if (digit == null) {
+                            false
+                        } else {
+                            // 最多留 3 位（台号到 999 就够了），再多出来的位数挤掉最前面那位。
+                            digitEntry = (digitEntry + digit).takeLast(3)
+                            zapNotice = true
+                            true
+                        }
+                    }
                 }
             },
     ) {
@@ -624,20 +703,6 @@ fun PlayerScreen(
                     .padding(start = 48.dp, end = 48.dp, top = 34.dp, bottom = 44.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(TvColors.Live)
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                ) {
-                    Text(
-                        text = "直播",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = channel.name,
@@ -719,6 +784,22 @@ fun PlayerScreen(
             }
         }
 
+        // 数字键选台：把正在输入的那几位数显示在右下角，停手 2.5 秒后按台号跳过去。
+        if (digitEntry.isNotEmpty()) {
+            Text(
+                text = digitEntry,
+                color = Color.White,
+                fontSize = 46.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 56.dp, bottom = 120.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.Black.copy(alpha = 0.7f))
+                    .padding(horizontal = 22.dp, vertical = 8.dp),
+            )
+        }
+
         AnimatedVisibility(
             visible = controlsVisible && errorMessage == null,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -747,21 +828,20 @@ fun PlayerScreen(
                         },
                         label = if (channel.id in favorites) "已收藏" else "收藏",
                         accent = channel.id in favorites,
+                        focusRequester = barFocus,
                         onClick = { onToggleFavorite(channel) },
+                    )
+                    PlayerActionButton(
+                        icon = Icons.Rounded.LiveTv,
+                        label = "选台",
+                        enabled = queue.size > 1,
+                        onClick = { channelPickerVisible = true },
                     )
                     PlayerActionButton(
                         icon = Icons.Rounded.SkipPrevious,
                         label = "上一个",
                         enabled = queue.size > 1,
                         onClick = { zap(-1) },
-                    )
-                    PlayerActionButton(
-                        icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        label = if (isPlaying) "暂停" else "播放",
-                        focusRequester = playFocus,
-                        onClick = {
-                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        },
                     )
                     PlayerActionButton(
                         icon = Icons.Rounded.SkipNext,
@@ -859,7 +939,7 @@ fun PlayerScreen(
                             reconnectsOnLine = 0
                             streamIndex = 0
                             errorMessage = null
-                            statusText = "正在连接…"
+                            statusText = connectingText(channel.name, 0)
                             isBuffering = true
                             retryNonce += 1
                         },
@@ -885,6 +965,19 @@ fun PlayerScreen(
             )
         }
 
+        if (channelPickerVisible) {
+            ChannelPickerDialog(
+                queue = queue,
+                selectedIndex = index,
+                favorites = favorites,
+                onSelect = { position ->
+                    channelPickerVisible = false
+                    jumpTo(position)
+                },
+                onDismiss = { channelPickerVisible = false },
+            )
+        }
+
         if (guideVisible) {
             ProgramGuideDialog(
                 channelName = channel.name,
@@ -898,9 +991,24 @@ fun PlayerScreen(
 
 private const val SAME_LINE_RECONNECTS = 2
 private const val RECONNECT_AFTER_STABLE_MS = 60_000L
-private const val CONNECT_STALL_LIMIT_MS = 25_000L
-private const val PLAYBACK_STALL_LIMIT_MS = 10_000L
 private const val RECOVERY_DEBOUNCE_MS = 1_500L
+
+/** 控制栏显示多久后自己收起来（用户 2026-10-22 要求 10 秒，原来写死 5 秒）。 */
+private const val CONTROLS_AUTO_HIDE_MS = 10_000L
+
+/** 数字键选台：停手这么久就把输入的数字当台号。 */
+private const val DIGIT_ENTRY_TIMEOUT_MS = 2_500L
+
+private val DIGIT_KEYS: Map<Key, Int> = mapOf(
+    Key.Zero to 0, Key.One to 1, Key.Two to 2, Key.Three to 3, Key.Four to 4,
+    Key.Five to 5, Key.Six to 6, Key.Seven to 7, Key.Eight to 8, Key.Nine to 9,
+    Key.NumPad0 to 0, Key.NumPad1 to 1, Key.NumPad2 to 2, Key.NumPad3 to 3,
+    Key.NumPad4 to 4, Key.NumPad5 to 5, Key.NumPad6 to 6, Key.NumPad7 to 7,
+    Key.NumPad8 to 8, Key.NumPad9 to 9,
+)
+
+private fun connectingText(channelName: String, lineIndex: Int): String =
+    if (lineIndex == 0) "正在连接 $channelName…" else "正在尝试线路 ${lineIndex + 1}…"
 
 private fun resolutionLine(size: VideoSize?): String? {
     val width = size?.width ?: 0
@@ -1085,7 +1193,174 @@ private fun playerKeyHint(prefs: TvPrefs): String {
         MenuKeyAction.Aspect -> "菜单键切换画面"
         MenuKeyAction.Off -> "菜单键无动作"
     }
-    return "$up · $down · $back · $menu"
+    return "OK 选台 · 左右键换线 · 数字键输台号 · $up · $down · $menu · $back"
+}
+
+@Composable
+private fun ChannelPickerDialog(
+    queue: List<TvChannel>,
+    selectedIndex: Int,
+    favorites: Set<String>,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (selectedIndex - 2).coerceAtLeast(0),
+    )
+    val selectedFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(160)
+        runCatching { selectedFocus.requestFocus() }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(880.dp)
+                .heightIn(max = 620.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(TvColors.BackgroundAlt)
+                .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
+                .padding(horizontal = 26.dp, vertical = 22.dp),
+        ) {
+            Text(
+                text = "选择频道",
+                color = TvColors.TextPrimary,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "本组共 ${queue.size} 个台 · 也可以直接用数字键输台号（如 1 2 表示第 12 台）",
+                color = TvColors.TextSecondary,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                itemsIndexed(queue, key = { position, channel -> position }) { position, item ->
+                    ChannelChoiceRow(
+                        position = position,
+                        channel = item,
+                        selected = position == selectedIndex,
+                        favorite = item.id in favorites,
+                        focusRequester = if (position == selectedIndex) selectedFocus else null,
+                        onClick = { onSelect(position) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "上下键移动 · OK 键选台 · 返回键关闭",
+                    color = TvColors.TextSecondary.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                PlayerActionButton(
+                    icon = Icons.Rounded.Check,
+                    label = "关闭",
+                    onClick = onDismiss,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelChoiceRow(
+    position: Int,
+    channel: TvChannel,
+    selected: Boolean,
+    favorite: Boolean,
+    focusRequester: FocusRequester?,
+    onClick: () -> Unit,
+) {
+    val fallbackFocus = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .clip(shape)
+            .background(
+                when {
+                    focused -> TvColors.SurfaceFocused
+                    selected -> TvColors.AccentSoft
+                    else -> TvColors.Surface
+                },
+            )
+            .border(
+                width = 2.dp,
+                color = when {
+                    focused -> TvColors.Accent
+                    selected -> TvColors.Accent.copy(alpha = 0.55f)
+                    else -> TvColors.Divider.copy(alpha = 0.65f)
+                },
+                shape = shape,
+            )
+            .focusRequester(focusRequester ?: fallbackFocus)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "${position + 1}",
+            color = if (selected || focused) TvColors.Accent else TvColors.TextSecondary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.width(58.dp),
+        )
+        Text(
+            text = channel.name,
+            color = if (selected) TvColors.Accent else TvColors.TextPrimary,
+            fontSize = 17.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (favorite) {
+            Icon(
+                imageVector = Icons.Rounded.Favorite,
+                contentDescription = null,
+                tint = TvColors.Accent,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(
+            text = "${channel.streams.size} 条线路",
+            color = TvColors.TextSecondary.copy(alpha = 0.75f),
+            fontSize = 12.sp,
+        )
+        if (selected) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = "正在播放",
+                color = TvColors.Accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
 }
 
 @Composable

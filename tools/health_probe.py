@@ -61,6 +61,18 @@ def fetch(session, url, timeout, range_header=False):
 EXT_URIS = re.compile(r"^#EXT-X-KEY:.*?URI=\"([^\"]+)\"", re.M)
 VARIANTS = re.compile(r"^#EXT-X-STREAM-INF:[^\n]*\n([^\n#]+)", re.M)
 SEGMENTS = re.compile(r"^(?!#)(\S+)$", re.M)
+# 变体清单里自报的画面尺寸，目录生成时用来把「分辨率高」的线排在前面。
+RESOLUTION = re.compile(r"RESOLUTION=(\d+)x(\d+)", re.I)
+
+
+def declared_resolution(text: str):
+    """取这份清单里自报的最大画面尺寸；没有 RESOLUTION 就返回 None（不猜）。"""
+    best = None
+    for width, height in RESOLUTION.findall(text):
+        pair = (int(width), int(height))
+        if best is None or pair[0] * pair[1] > best[0] * best[1]:
+            best = pair
+    return best
 
 
 def resolve(base, ref):
@@ -150,6 +162,9 @@ def probe_one(url: str, connect_timeout: float, read_timeout: float) -> dict:
         return finish(result, started, "可取到分片" if playable else "分片太小", kind)
 
     text = body.decode("utf-8", "replace")
+    best = declared_resolution(text)
+    if best:
+        result["resolution"] = list(best)
     variants = VARIANTS.findall(text)
     # 清单常被 302 到另一台主机（如 74.91.26.218 → 63.141.226.98），分片是相对那一台写的；
     # 拿原始地址当基址会把每条分片都读成 404。

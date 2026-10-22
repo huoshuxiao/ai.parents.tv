@@ -41,6 +41,10 @@ HEALTH = {}
 IDENTITY = {}
 IDENTITY_GOOD = {"台标相符"}
 
+# prepack 抽帧拿到的原生画面尺寸（canonical url -> [宽, 高]）。
+# 只用来在同一证据档里比高下，缺读数不等于线路坏（读 0 当未知）。
+FRAME_RES = {}
+
 # 对端根本没能答复的失败：只说明「本机网络到不了」，不说明线路本身坏了。
 NO_REPLY = {"连接超时", "连不上", "响应超时"}
 
@@ -73,6 +77,25 @@ def usable(name, url):
     return (not DROP_DEAD) or evidence(url, name)[0] < BAD_TIER
 
 
+def resolution_rank(url):
+    """这条线自报/实测到的画面尺寸，用来把高分辨率的线排前面。
+
+    两个来源，都拿到才算数，不从 URL 里的 1080/hd/蓝光 这类字样猜——实测那些字样既出现在
+    主机名也出现在节目号里（`live.hd.hdbs.cn` 就是域名带 hd），拿来排序会把标错名的坏线顶到前面。
+      1) prepack 抽到的原生尺寸（真画面，最可信）；
+      2) 清单自报的 `#EXT-X-STREAM-INF:…RESOLUTION=宽x高`（health_probe 记的）。
+    都没有就返回 0（当作未知），让证据档和 IPv6 决定次序。
+    """
+    key = stream_rules.canon(url)
+    size = FRAME_RES.get(key) or (HEALTH.get(key) or {}).get("resolution")
+    if not size:
+        return 0
+    try:
+        return int(size[0]) * int(size[1])
+    except (TypeError, ValueError, IndexError):
+        return 0
+
+
 SOURCES = {
     "fanmingming": "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/index.m3u",
     "vbsky": "https://raw.githubusercontent.com/vbskycn/iptv/master/tv/iptv4.m3u",
@@ -100,6 +123,8 @@ SOURCE_PRIORITY = {
     "aptv": 7,
     # 人工补进已有频道的候选线路：排在最后，不挤掉公开源里已经能播的第一条。
     "manual_extra": 80,
+    # 人工新建的频道（公开列表里根本没有这个名字），线路只有这一条，排在自补线路之前。
+    "manual_sports": 79,
 }
 
 PROVINCE_ORDER = [
@@ -487,9 +512,16 @@ class Builder:
             streams = sorted(
                 ch["streams"],
                 key=lambda s: (
-                    s["ipv6"],
-                    s["geo"],
+                    # 1) 有没有实测证据说这条能出画面（可用的排最前）
+                    evidence(s["url"], ch["name"])[0],
+                    # 2) 同一档里 IPv6 优先（用户 2026-10-22 指令；家里网络有 v6 出口，
+                    #    而本机没有，所以 v6 线路只可能是「本机连不通」，不能因此排到可用线后面）
+                    0 if s["ipv6"] else 1,
+                    # 3) 清单自报的分辨率，高的在前
+                    -resolution_rank(s["url"]),
+                    # 4) 细排：分片快慢、地区限制、来源、原始次序
                     evidence(s["url"], ch["name"]),
+                    s["geo"],
                     SOURCE_PRIORITY.get(s["source"], 50),
                     s["seq"],
                 ),
@@ -976,6 +1008,17 @@ MANUAL_EXTRA = [
     ("CCTV-4K 超高清", "cctv", "央视", "http://8.138.7.223/tv/cctvnews.php?id=cctv4k"),
 ]
 
+# 用户 2026-10-22 点名要补的省市体育频道，只收抽帧认过台标的那一条：
+# 风云足球 10-22 02:45 现抽 1920×1090，画面右上角写着「CCTV 风云足球」，正在播英超第 22 轮
+# 伍尔弗汉普顿—纽卡斯尔联，所以名字照台标写「风云足球」，不写成用户口里的「足球频道」。
+# 另外 10 个名字（精品体育/广东/上海/北京/天津/山东/江苏/湖北/四川/福建体育）这一轮没加：
+# 21 份公开播放列表里 5 个根本没有，剩下的要么本机连不通（山东/江苏是境内单播），
+# 要么抽到的帧是带二维码的下载 App 推广页（epg.pw 代理，已在 prepack 指纹里钉死）。
+MANUAL_SPORTS = [
+    ("风云足球", "sports", "国内体育", 12,
+     "http://38.75.136.137:98/gslb/dsdqpub/fyzq.m3u8?auth=testpub"),
+]
+
 
 def add_manual_channels(builder):
     for order, (display, urls) in enumerate(MANUAL_4K):
@@ -983,6 +1026,8 @@ def add_manual_channels(builder):
             builder.add(display, "cctv", "4K 超高清", url, source="manual_4k", order=order)
     for display, category, subgroup, url in MANUAL_EXTRA:
         builder.add(display, category, subgroup, url, source="manual_extra")
+    for display, category, subgroup, order, url in MANUAL_SPORTS:
+        builder.add(display, category, subgroup, url, source="manual_sports", order=order)
 
 
 def load_health(path):
@@ -1000,6 +1045,25 @@ def load_health(path):
             key = row.get("canonical") or stream_rules.canon(row.get("url", ""))
             if key:
                 rows[key] = row
+    return rows
+
+
+def load_frames(path):
+    """读 prepack 抽帧落下的原生尺寸（canonical url -> [宽, 高]），后写的算数。"""
+    rows = {}
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            width, height = row.get("width") or 0, row.get("height") or 0
+            key = stream_rules.canon(row.get("url", ""))
+            if key and width > 0 and height > 0:
+                rows[key] = [int(width), int(height)]
     return rows
 
 
@@ -1022,7 +1086,7 @@ def load_identity(path):
 
 
 def build(args):
-    global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD
+    global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD, FRAME_RES
     MAX_STREAMS = max(0, int(args.max_streams))
     DROP_DEAD = not args.keep_dead
     out_path = Path(args.out) if args.out else OUT
@@ -1030,11 +1094,15 @@ def build(args):
     HEALTH = load_health(health_path) if health_path.exists() else {}
     identity_path = Path(args.identity)
     IDENTITY = load_identity(identity_path) if identity_path.exists() else {}
+    frames_path = Path(args.frames)
+    FRAME_RES = load_frames(frames_path) if frames_path.exists() else {}
     if HEALTH or IDENTITY:
         print(f"[evidence] {len(HEALTH)} 条分片级读数、{len(IDENTITY)} 条抽帧身份结论，"
               f"线路按「抽帧认过台标 > 取到过分片 > 没测过 > 本机连不通 > 已确认坏」排")
     else:
         print(f"[evidence] 没有可用读数（{health_path}），线路只按来源优先级排")
+    print(f"[resolution] {len(FRAME_RES)} 条抽帧尺寸读数 + {sum(1 for r in HEALTH.values() if r.get('resolution'))} 条清单自报尺寸"
+          f"（同一证据档内高分辨率排前，IPv6 优先于 IPv4）")
     if not args.offline:
         ensure_sources()
     entries = {}
@@ -1065,18 +1133,13 @@ def build(args):
         raise SystemExit("catalog is empty")
 
     # 公开列表缺少稳定来源的地方台，用人工实测线路补齐。
-    # 排序按用户 2026-10-21 在电视上的实测结论：只有 dassby 那条能出画面（但会卡），
-    # 其余四条（广电 HLS/原始 TS、辽宁移动三条单播）在电视上全部播不出来，退为备用。
+    # 辽宁体育只留 dassby 一条：用户在电视上实测只有这条能出画面（10-21 晚三次播出），
+    # bfgd 那两条（清单 120.76.248.139 与 playurl 直连 httplive.slave.bfgd.com.cn:14311）
+    # 按用户 2026-10-22 的话判为不可用摘掉——本机对 bfgd 分片主机 TCP 一直是超时，从未出过画面。
+    # 辽宁移动三条单播（清单 404）由「丙」档的 usable() 摘除，不再写在这里。
     manual_streams = {
         "辽宁体育": [
             "http://dassby.qqff.top:99/live/辽宁体育/index.m3u8",
-            "http://120.76.248.139/live/bfgd/4200000611.m3u8",
-            "http://httplive.slave.bfgd.com.cn:14311/playurl?playtype=live&protocol=http"
-            "&accesstoken=R5F2408FEU3198804BK78052214IE73560DFP2BF4M340CE68V0Z339CBW1626D4D261E46FEA"
-            "&playtoken=31608RMZHGPUCXX10&programid=4200000611",
-            "http://39.134.61.218/PLTV/88888888/224/3221226916/index.m3u8",
-            "http://hwottcdn.ln.chinamobile.com/PLTV/11/224/3221226764/index.m3u8",
-            "http://39.135.129.162/hwottcdn.ln.chinamobile.com/PLTV/3/224/3221226764/index.m3u8",
         ],
     }
     # CCTV-5 体育：辽宁移动网关这条是抽帧看过台标的真 CCTV5 画面（见 MANUAL_EXTRA 上方注释），
@@ -1203,6 +1266,9 @@ if __name__ == "__main__":
     ap.add_argument("--identity", type=Path,
                     default=CACHE / "linecheck" / "identity_review.jsonl",
                     help="抽帧复核的台标身份结论（jsonl），优先于分片级结论决定线路顺序")
+    ap.add_argument("--frames", type=Path,
+                    default=CACHE / "prepack" / "line_frames.jsonl",
+                    help="抽帧得到的原生画面尺寸（jsonl），同一证据档内按分辨率高低排")
     ap.add_argument("--keep-dead", action="store_true",
                     help="保留「对端明确答复了坏／画面是别的台」的线路（默认删掉，删空的频道整个消失）")
     raise SystemExit(build(ap.parse_args()))

@@ -31,10 +31,58 @@ import probe_channels  # noqa: E402
 
 DEFAULT_OUT = BASE / "tools" / ".cache" / "prepack"
 DEFAULT_DIST = BASE / "dist"
+FIXTURES = BASE / "tools" / "fixtures"
 UA = health_probe.UA
 FRAME_OK_BYTES = 4_000
-# 抽帧时一台最多试几条线：只试「分片可取」的线，第一条出帧就停。
-MAX_FRAME_TRIES = 3
+# 出帧结论里，只有这两种算「正常画面」；其余（广告、占位页、二维码、别的台）都不许进包。
+GOOD_LOGO = "台标相符"
+GOOD_PICTURE = "正常节目画面"
+# review.json 里没写结论的帧一律按「未查」计，不折成通过。
+PENDING = "待人工复核"
+
+# 已知「不是节目画面」的画面指纹：dHash（8×8 相邻像素梯度，64 位）+ 一句话判词。
+# 用户 2026-10-22 要求「必须排除广告画面」「画面不能有二维码」，全频道口径下几百张帧逐张看不过来，
+# 所以把亲眼判过的推广页/测试卡按指纹钉住，同图的直接自动判红。
+# 阈值 8 是量出来的（10-22 02:45，本批 35 张正常画面）：正常帧到这三枚的最小汉明距离
+# 分别是 16 / 24 / 23，而两张不同频道的 epg.pw 推广页之间距离是 0。
+FRAME_FINGERPRINTS = (
+    (0x188F8E8C4ECDCF0F, "占位页：epg.pw 二维码推广页（「Scan the QR code…download our latest APP」）"),
+    (0x2F69686860603DE3, "占位页：CCTV 测试卡"),
+    (0x2F6F222120203DE3, "占位页：CCTV 测试卡（少儿）"),
+)
+FINGERPRINT_MAX_DISTANCE = 8
+
+
+def dhash(path, size: int = 8) -> int:
+    """把画面缩成 8×9 灰度，逐行比较相邻像素的明暗，得到 64 位指纹。"""
+    from PIL import Image
+
+    with Image.open(path) as image:
+        small = image.convert("L").resize((size + 1, size), Image.BILINEAR)
+    pixels = small.load()
+    bits = 0
+    for y in range(size):
+        for x in range(size):
+            bits = (bits << 1) | (1 if pixels[x, y] > pixels[x + 1, y] else 0)
+    return bits
+
+
+def hamming(first: int, second: int) -> int:
+    return bin(first ^ second).count("1")
+
+
+def fingerprint_hit(path) -> str | None:
+    """画面与某枚已知指纹足够像就返回它的判词；读不出图的按未命中处理。"""
+    if not path:
+        return None
+    try:
+        digest = dhash(path)
+    except Exception:  # noqa: BLE001 - 坏图交给「抽不到帧」那一格处理
+        return None
+    for known, verdict in FRAME_FINGERPRINTS:
+        if hamming(digest, known) <= FINGERPRINT_MAX_DISTANCE:
+            return verdict
+    return None
 
 
 def log(message: str) -> None:
@@ -60,19 +108,24 @@ def apk_asset_sha(apk: Path, asset: str) -> str:
         return hashlib.sha256(zf.read(asset)).hexdigest()
 
 
-def run_health(catalog: Path, out_dir: Path, workers: int, use_cache: bool) -> dict[str, dict]:
+def run_health(catalog: Path, out_dir: Path, workers: int, use_cache: bool,
+               skip_probe: bool = False) -> dict[str, dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
     results = out_dir / "line_health.jsonl"
-    if results.exists() and not use_cache:
-        results.unlink()
-    command = [
-        sys.executable, str(BASE / "tools" / "health_probe.py"),
-        "--catalog", str(catalog), "--out", str(out_dir), "--workers", str(workers),
-    ]
-    log("[health] " + " ".join(command))
-    proc = subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    if proc.returncode != 0 and not results.exists():
-        raise SystemExit(f"health_probe 失败 EXIT={proc.returncode}，且没有产出读数文件")
+    if skip_probe:
+        if not results.exists():            raise SystemExit(f"--rerender 要沿用旧读数，但 {results} 不存在")
+        log(f"[health] 沿用旧读数 {results.name}（这一轮一条都没重新探测）")
+    else:
+        if results.exists() and not use_cache:
+            results.unlink()
+        command = [
+            sys.executable, str(BASE / "tools" / "health_probe.py"),
+            "--catalog", str(catalog), "--out", str(out_dir), "--workers", str(workers),
+        ]
+        log("[health] " + " ".join(command))
+        proc = subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        if proc.returncode != 0 and not results.exists():
+            raise SystemExit(f"health_probe 失败 EXIT={proc.returncode}，且没有产出读数文件")
     rows: dict[str, dict] = {}
     for line in results.read_text(encoding="utf-8").splitlines():
         try:
@@ -110,59 +163,145 @@ def recheck_must_watch(targets: list[dict], health: dict[str, dict], results_pat
     return tally
 
 
-def grab_frame(url: str, work_dir: Path, timeout: int) -> dict:
-    """抽帧：出帧的 jpg 落到 work_dir/frame_first.jpg，返回路径与字节数。"""
+def grab_frame(url: str, work_dir: Path, timeout: int, reuse: bool = False,
+               no_capture: bool = False) -> dict:
+    """抽一帧原生尺寸的画面：jpg 的宽高就是这条流的真实分辨率。
+
+    reuse=True 时沿用上一轮已经落盘的那一帧——看完图再重跑门禁不必再花十几分钟重抽。
+    no_capture=True 时一行网络请求都不发：上一轮没抽到的这一轮仍然记「没画面」，
+    只用来换门禁口径重出报告（--rerender）。
+    """
+    keep = work_dir / "frame_first.jpg"
+    if reuse and keep.exists() and keep.stat().st_size > FRAME_OK_BYTES:
+        width, height = frame_size(keep)
+        return {"frame": keep, "bytes": keep.stat().st_size, "width": width, "height": height,
+                "timed_out": False, "elapsed_ms": 0}
+    if no_capture:
+        return {"frame": None, "bytes": 0, "width": 0, "height": 0,
+                "timed_out": False, "elapsed_ms": 0}
     if work_dir.exists():
         shutil.rmtree(work_dir)
-    captured = probe_channels.capture_frames(url, work_dir, timeout)
+    captured = probe_channels.capture_frames(url, work_dir, timeout, native=True)
     frames = [f for f in captured["frames"] if f.stat().st_size > FRAME_OK_BYTES]
     if not frames:
-        return {"frame": None, "bytes": 0, "timed_out": captured["timed_out"],
-                "elapsed_ms": captured["elapsed_ms"]}
-    keep = work_dir / "frame_first.jpg"
+        return {"frame": None, "bytes": 0, "width": 0, "height": 0,
+                "timed_out": captured["timed_out"], "elapsed_ms": captured["elapsed_ms"]}
     shutil.copyfile(frames[0], keep)
-    return {"frame": keep, "bytes": keep.stat().st_size, "timed_out": captured["timed_out"],
-            "elapsed_ms": captured["elapsed_ms"]}
+    width, height = frame_size(keep)
+    return {"frame": keep, "bytes": keep.stat().st_size, "width": width, "height": height,
+            "timed_out": captured["timed_out"], "elapsed_ms": captured["elapsed_ms"]}
+
+
+def frame_size(path: Path) -> tuple[int, int]:
+    try:
+        from PIL import Image
+        with Image.open(path) as image:
+            return int(image.width), int(image.height)
+    except Exception:  # noqa: BLE001 - 读不出尺寸就记 0，让门禁按「未查」处理
+        return 0, 0
 
 
 def probe_channel(channel: dict, health: dict[str, dict], frames_dir: Path,
-                  timeout: int) -> dict:
+                  timeout: int, stop_at_first_frame: bool, reuse: bool = False,
+                  no_capture: bool = False) -> dict:
+    """逐线路记三级证据。
+
+    必看台（stop_at_first_frame=False）要把**每一条**线路都抽一遍帧——
+    用户 2026-10-22 的要求是「全线路检测全部有画面才算通过」，一台里只要有一条抽不到帧就判红。
+    其他台（True）只要求「至少一条有正常画面」，第一条出帧就停，省下几十分钟机时。
+    """
     lines = []
+    got_frame = False
     for index, url in enumerate(channel["streams"]):
         row = health.get(url)
-        verdict = row["verdict"] if row else "未测"
         lines.append({
-            "index": index, "url": url, "verdict": verdict,
+            "index": index, "url": url,
+            "verdict": row["verdict"] if row else "未测",
             "http_status": (row or {}).get("http_status"),
             "seg_bytes": (row or {}).get("seg_bytes", 0),
-            "detail": (row or {}).get("detail", ""),
+            "resolution": (row or {}).get("resolution"),
+            "frame": None, "bytes": 0, "width": 0, "height": 0,
         })
-    segment_ok = [line for line in lines if line["verdict"] == "可取到分片"]
-    frame = None
-    frame_line = None
-    for line in segment_ok[:MAX_FRAME_TRIES]:
-        info = grab_frame(line["url"], frames_dir / channel["id"] / f"line{line['index']}", timeout)
+        if got_frame and stop_at_first_frame:
+            lines[-1]["frame_skipped"] = "本机已有出帧线路，按「至少一条」口径不再抽帧"
+            continue
+        info = grab_frame(url, frames_dir / channel["id"] / f"line{index}", timeout, reuse,
+                          no_capture)
         if info["frame"]:
-            frame, frame_line = info, line
-            break
+            lines[-1].update(frame=info["frame"], bytes=info["bytes"],
+                             width=info["width"], height=info["height"])
+            got_frame = True
+        else:
+            lines[-1]["frame_skipped"] = "抽帧未出画面"
+    segment_ok = sum(1 for line in lines if line["verdict"] == "可取到分片")
+    framed = [line for line in lines if line["frame"]]
     return {
         "id": channel["id"], "name": channel["name"], "subgroup": channel.get("subgroup"),
-        "lines": lines, "segment_ok": len(segment_ok), "frame": frame, "frame_line": frame_line,
-        "frame_tried": min(len(segment_ok), MAX_FRAME_TRIES),
+        "must_watch": not stop_at_first_frame,
+        "lines": lines, "segment_ok": segment_ok, "frame_ok": len(framed),
+        "frame": framed[0] if framed else None,
+        "frame_line": framed[0] if framed else None,
+        "all_lines_framed": bool(lines) and len(framed) == len(lines),
     }
 
 
-def load_review(path: Path) -> dict[str, str]:
+def load_review(path: Path) -> dict[str, dict]:
+    """人工看图结论：URL → {logo, picture}。
+
+    `logo` 是台标对不对得上，`picture` 是这一帧算不算正常节目画面（广告/占位页/带二维码都不算）。
+    两个字段各自独立，缺任何一个都按「待人工复核」计，不默认成通过。
+    """
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {row["url"]: row.get("logo", "待人工复核") for row in data.get("reviews", [])}
+    out = {}
+    for row in data.get("reviews", []):
+        out[row["url"]] = {
+            "logo": row.get("logo", PENDING),
+            "picture": row.get("picture", PENDING),
+        }
+    return out
+
+
+def line_verdict(review: dict[str, dict], line: dict) -> tuple[str, str]:
+    """人工结论优先；没有人写过的那一帧先过一遍已知指纹。
+
+    指纹只自动判「这一帧不是节目内容」这半件事，台标对不对仍然要人看。
+    """
+    entry = review.get(line["url"]) or {}
+    logo = entry.get("logo", PENDING)
+    picture = entry.get("picture", PENDING)
+    if picture == PENDING:
+        hit = fingerprint_hit(line.get("frame"))
+        if hit:
+            picture = hit + "（自动比对已知图）"
+    return logo, picture
+
+
+def write_line_frames(path: Path, results: list[dict]) -> None:
+    """把每条线路的原生画面尺寸落成 jsonl，供 build_catalog.py 按分辨率给线路排名。
+
+    只记本次真抽到帧的那几条；没出帧的线路不写尺寸（不拿 0 冒充「标清」）。
+    """
+    with path.open("w", encoding="utf-8") as handle:
+        for result in results:
+            for line in result["lines"]:
+                if not line["frame"]:
+                    continue
+                handle.write(json.dumps({
+                    "channel": result["name"], "line_index": line["index"], "url": line["url"],
+                    "width": line["width"], "height": line["height"],
+                    "bytes": line["bytes"], "frame": str(line["frame"]),
+                }, ensure_ascii=False) + "\n")
+    log(f"[frames] {path}")
 
 
 def render(report: dict) -> str:
     groups: dict[str, list[dict]] = {}
     for result in report["channels"]:
         groups.setdefault(result["subgroup"] or "其他", []).append(result)
+    lines_total = sum(len(r["lines"]) for r in report["channels"])
+    framed_total = sum(r["frame_ok"] for r in report["channels"])
     out = [
         f"# 打包前线路检测报告 · {report['title']}",
         "",
@@ -171,55 +310,56 @@ def render(report: dict) -> str:
         f"- 目录 sha256：`{report['catalog_sha256']}`",
         f"- 待打包 APK：{report['apk'] or '（本次未指定，报告只描述目录，不声明包体一致）'}",
         f"- APK 内 `assets/channels.json` sha256：`{report['apk_sha256'] or '未取'}`",
-        f"- 覆盖：央视/卫视/辽宁体育 共 {len(report['channels'])} 台 / "
-        f"{sum(len(r['lines']) for r in report['channels'])} 条线路",
+        f"- 覆盖：{len(report['channels'])} 台 / {lines_total} 条线路 · 抽到画面 {framed_total} 条"
+        f"（口径：{'央视/卫视/辽宁体育 全线路逐条抽帧' if report['scope'] == 'must' else '全目录；必看台逐条、其他台探到第一条画面即停'}）",
         f"- 必看台串行复测：{report['recheck']['复测线路']} 条首轮全灭的线路被复测，"
-        f"其中 {report['recheck']['复测后转好']} 条复测后取到分片"
-        f"（并发探测会把慢源读成超时，这一层专门补它）",
+        f"其中 {report['recheck']['复测后转好']} 条复测后取到分片",
         "",
         "> 三级证据各自独立成列：清单可达（HTTP 2xx + 正文 #EXTM3U）→ 分片可取（>1KB 媒体字节）"
-        "→ 画面出帧（VLC 抽到 jpg）。出帧不等于台标相符，最后一列仍要人工看缩略图。",
+        "→ 画面出帧（VLC 抽到原生尺寸 jpg）。台标是否相符、画面是不是广告/带二维码，"
+        "仍要人工看帧，脚本只把「有没有人判过、判的是什么」如实列出来。",
         "",
     ]
-    for group in ("央视", "卫视", "国内体育"):
+    for group in ("央视", "卫视", "国内体育", "其他"):
         results = groups.get(group)
         if not results:
             continue
-        frames = sum(1 for r in results if r["frame"])
-        segs = sum(1 for r in results if r["segment_ok"])
+        lines = sum(len(r["lines"]) for r in results)
+        framed = sum(r["frame_ok"] for r in results)
         out += [
-            f"## {group}：{len(results)} 台 · 分片可取 {segs} 台 · 出帧 {frames} 台",
+            f"## {group}：{len(results)} 台 / {lines} 条线路 · 出帧 {framed} 条",
             "",
-            "| 频道 | 线路 | 清单 2xx | 分片可取 | 出帧 | 台标 |",
+            "| 频道 | 线路 | 清单 2xx | 分片可取 | 出帧 | 逐条明细 |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
         for r in sorted(results, key=lambda x: (x["subgroup"] or "", x["name"])):
             playlist_ok = sum(1 for line in r["lines"]
                               if isinstance(line["http_status"], int) and 200 <= line["http_status"] < 300)
-            if r["frame"]:
-                rel = Path("..") / r["frame"]["frame"].relative_to(BASE)
-                which = r["frame_line"]["index"] + 1
-                frame_cell = f"[{r['frame']['bytes']:,} B]({rel}) 第{which}条"
-                logo = report["review"].get(r["frame_line"]["url"], "待人工复核")
-            elif r["segment_ok"]:
-                frame_cell = "—"
-                logo = "抽帧未出画面"
-            else:
-                frame_cell = "—"
-                logo = "无可抽帧线路"
+            detail = []
+            for line in r["lines"]:
+                logo, picture = line_verdict(report["review"], line)
+                if line["frame"]:
+                    size = f"{line['width']}×{line['height']}" if line["height"] else "?"
+                    frame_path = Path(line["frame"])
+                    try:
+                        # 报告写在 dist/ 下，帧路径要退一层；不在仓库内的（--out 指到别处）就原样写。
+                        rel = Path("..") / frame_path.resolve().relative_to(BASE)
+                    except ValueError:
+                        rel = frame_path
+                    detail.append(f"[线{line['index'] + 1} 出帧 {size}]({rel})·{logo}·{picture}")
+                else:
+                    detail.append(f"线{line['index'] + 1} 无画面（{line['verdict']}）")
             out.append(
                 f"| {r['name']} | {len(r['lines'])} | {playlist_ok}/{len(r['lines'])} "
-                f"| {r['segment_ok']}/{len(r['lines'])} | {frame_cell} | {logo} |"
+                f"| {r['segment_ok']}/{len(r['lines'])} | {r['frame_ok']}/{len(r['lines'])} "
+                f"| {'；'.join(detail)} |"
             )
         out.append("")
-    dead = [r for r in report["channels"] if not r["frame"]]
-    out.append("## 未出帧的台（打包后按现状就是「点开可能黑屏」）")
-    out.append("")
-    if dead:
-        out.append(f"- 共 {len(dead)} 台：" + "、".join(r["name"] for r in dead))
-    else:
-        out.append("- 无")
+    dead = [r for r in report["channels"] if not r["frame_ok"]]
     out += [
+        "## 一条画面都没抽到的台",
+        "",
+        f"- 共 {len(dead)} 台：" + "、".join(r["name"] for r in dead) if dead else "- 无",
         "",
         "## 判定",
         "",
@@ -238,6 +378,52 @@ def render(report: dict) -> str:
     return "\n".join(out)
 
 
+def selfcheck() -> int:
+    """验 FRAME_FINGERPRINTS 会不会咬人：正对照要抓到，负对照要放过，重编码后还要抓得到。
+
+    夹具是 tools/fixtures/ 下三张真帧（一张 epg.pw 二维码推广页、一张 CCTV 测试卡、
+    一张正常节目画面）。缺夹具直接算不通过——不许把「没验成」念成「过了」。
+    """
+    failures: list[str] = []
+    qr = FIXTURES / "frame_qr_placeholder.jpg"
+    card = FIXTURES / "frame_test_card.jpg"
+    program = FIXTURES / "frame_program.jpg"
+    for name, path, expect in ((qr.name, qr, "占位页"), (card.name, card, "占位页"),
+                               (program.name, program, None)):
+        if not path.exists():
+            failures.append(f"{name}: 夹具缺失 ⇒ 这一格没验成")
+            continue
+        hit = fingerprint_hit(path)
+        nearest = min(hamming(dhash(path), known) for known, _ in FRAME_FINGERPRINTS)
+        if expect is None:
+            if hit:
+                failures.append(f"{name}: 正常节目画面被判成「{hit}」（离最近指纹 {nearest} 格）⇒ 判据过牙")
+            else:
+                log(f"[selfcheck] 放过 {name}（离最近指纹 {nearest} 格，阈值 {FINGERPRINT_MAX_DISTANCE}）")
+        elif not hit or not hit.startswith(expect):
+            failures.append(f"{name}: 该判成{expect}，实际「{hit}」⇒ 判据没牙")
+        else:
+            log(f"[selfcheck] 抓到 {name} → {hit}")
+    if qr.exists():
+        # 同一张推广页在现网会被重新编码，压一遍再判：抓不到就说明指纹只认字节、不认画面。
+        import tempfile
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            again = Path(tmp) / "reencoded.jpg"
+            with Image.open(qr) as image:
+                image.save(again, "JPEG", quality=55)
+            hit = fingerprint_hit(again)
+            if not hit:
+                failures.append("重编码后的推广页抓不到 ⇒ 阈值太紧")
+            else:
+                log(f"[selfcheck] 抓到重编码副本（quality=55）→ {hit}")
+    for line in failures:
+        log(f"[selfcheck] 不通过 {line}")
+    log(f"[selfcheck] 结论：{'通过' if not failures else f'{len(failures)} 格不通过'}")
+    return 1 if failures else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", type=Path, default=BASE / "app/src/main/assets/channels.json")
@@ -251,52 +437,78 @@ def main() -> int:
     parser.add_argument("--skip-frames", action="store_true", help="只出清单/分片两级证据")
     parser.add_argument("--must", default="辽宁体育", help="必看台，逗号分隔；首轮全灭会串行复测")
     parser.add_argument("--recheck", type=int, default=3, help="必看台每条线路的复测轮数，0=不复测")
+    parser.add_argument("--scope", choices=("must", "all"), default="must",
+                        help="must=只查央视/卫视/辽宁体育（每条线路都要有画面）；"
+                             "all=再加上其他频道（每台探到一条画面即停）")
+    parser.add_argument("--frame-workers", type=int, default=6, help="抽帧并发数")
+    parser.add_argument("--reuse-frames", action="store_true",
+                        help="沿用上一轮已落盘的帧（看完图重跑门禁时用，省十几分钟重抽）")
+    parser.add_argument("--selfcheck", action="store_true",
+                        help="只验画面指纹判据有没有牙（不联网、不探测）")
+    parser.add_argument("--rerender", action="store_true",
+                        help="一行网络请求都不发：沿用 --out 目录里上一次的清单/分片读数和已落盘的帧，"
+                             "只按当前门禁口径重出报告（改判据、补看图结论时用）")
     args = parser.parse_args()
+    if args.selfcheck:
+        return selfcheck()
+    args.out = args.out.resolve()
     if args.apk and not args.apk.exists():
         raise SystemExit(f"--apk 指向的文件不存在：{args.apk}")
 
     catalog = args.catalog.resolve()
     must = tuple(name.strip() for name in args.must.split(",") if name.strip())
     data = json.loads(catalog.read_text(encoding="utf-8"))
-    targets = [c for c in data["channels"] if is_target(c, must)]
-    if not targets:
+    must_watch = [c for c in data["channels"] if is_target(c, must)]
+    others = [c for c in data["channels"] if not is_target(c, must)]
+    if not must_watch:
         raise SystemExit(f"目录里没匹配到央视/卫视/{args.must}：{catalog}")
+    targets = must_watch + (others if args.scope == "all" else [])
 
     args.out.mkdir(parents=True, exist_ok=True)
     target_catalog = args.out / "target_catalog.json"
     target_catalog.write_text(json.dumps({"channels": targets}, ensure_ascii=False, indent=1),
                               encoding="utf-8")
 
-    health = run_health(target_catalog, args.out, args.workers, args.use_cache)
+    health = run_health(target_catalog, args.out, args.workers, args.use_cache,
+                        skip_probe=args.rerender)
     recheck = recheck_must_watch(
         [c for c in targets if c["name"] in must],
-        health, args.out / "line_health.jsonl", args.recheck)
+        health, args.out / "line_health.jsonl", 0 if args.rerender else args.recheck)
     if recheck["复测线路"]:
         log(f"[recheck] 必看台复测 {recheck['复测线路']} 条，转好 {recheck['复测后转好']} 条")
     frames_dir = args.out / "frames"
+    must_ids = {c["id"] for c in must_watch}
     results: list[dict] = []
     started = time.time()
     if args.skip_frames:
         for channel in targets:
             results.append({
                 "id": channel["id"], "name": channel["name"], "subgroup": channel.get("subgroup"),
+                "must_watch": channel["id"] in must_ids,
                 "lines": [{"index": i, "url": u,
                            "verdict": health.get(u, {}).get("verdict", "未测"),
                            "http_status": health.get(u, {}).get("http_status"),
-                           "seg_bytes": health.get(u, {}).get("seg_bytes", 0), "detail": ""}
+                           "seg_bytes": health.get(u, {}).get("seg_bytes", 0),
+                           "resolution": health.get(u, {}).get("resolution"),
+                           "frame": None, "bytes": 0, "width": 0, "height": 0}
                           for i, u in enumerate(channel["streams"])],
                 "segment_ok": sum(1 for u in channel["streams"]
                                   if health.get(u, {}).get("verdict") == "可取到分片"),
-                "frame": None, "frame_line": None, "frame_tried": 0,
+                "frame_ok": 0, "frame": None, "frame_line": None, "all_lines_framed": False,
             })
     else:
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=args.frame_workers) as pool:
             results = list(pool.map(
-                lambda c: probe_channel(c, health, frames_dir, args.frame_timeout), targets))
+                lambda c: probe_channel(c, health, frames_dir, args.frame_timeout,
+                                        stop_at_first_frame=c["id"] not in must_ids,
+                                        reuse=args.reuse_frames or args.rerender,
+                                        no_capture=args.rerender),
+                targets))
         log(f"[frames] {len(results)} 台，用时 {time.time() - started:.0f}s")
 
     order = {c["id"]: i for i, c in enumerate(targets)}
     results.sort(key=lambda r: (r["subgroup"] or "", order[r["id"]]))
+    write_line_frames(args.out / "line_frames.jsonl", results)
 
     apk_path = args.apk.resolve() if args.apk else None
     apk_sha = None
@@ -305,6 +517,7 @@ def main() -> int:
     review_path = args.out / "review.json"
     report = {
         "title": args.title,
+        "scope": args.scope,
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "catalog": str(catalog.relative_to(BASE)),
         "catalog_bytes": catalog.stat().st_size,
@@ -318,50 +531,135 @@ def main() -> int:
         "command": "python3 tools/prepack_report.py " + " ".join(sys.argv[1:]),
     }
 
-    by_group: dict[str, list[dict]] = {}
-    for r in results:
-        by_group.setdefault(r["subgroup"] or "其他", []).append(r)
-
     def gate(name: str, status: str, evidence: str) -> dict:
         return {"name": name, "status": status, "evidence": evidence,
                 "ok": status == "通过", "checked": status != "未查"}
 
     gates = []
-    lns = next((r for r in results if r["name"] == "辽宁体育"), None)
+    watch = [r for r in results if r["must_watch"]]
+    lns = next((r for r in watch if r["name"] == "辽宁体育"), None)
     if lns is None:
         gates.append(gate("G1 辽宁体育必须有出帧线路", "不通过", "目录里没找到「辽宁体育」这一台"))
     elif args.skip_frames:
         gates.append(gate("G1 辽宁体育必须有出帧线路", "未查",
-                          f"--skip-frames 只出了清单/分片两级：分片可取 {lns['segment_ok']}/{len(lns['lines'])} 条，没抽帧"))
-    elif lns["frame"]:
+                          f"--skip-frames 只出了清单/分片两级：分片可取 {lns['segment_ok']}"
+                          f"/{len(lns['lines'])} 条，没抽帧"))
+    elif lns["frame_ok"]:
         gates.append(gate("G1 辽宁体育必须有出帧线路", "通过",
-                          f"辽宁体育 {lns['segment_ok']}/{len(lns['lines'])} 条分片可取，"
-                          f"第{lns['frame_line']['index'] + 1}条抽到 {lns['frame']['bytes']:,} B 画面"))
+                          f"辽宁体育 {len(lns['lines'])} 条线路里 {lns['frame_ok']} 条抽到画面"))
     else:
         gates.append(gate("G1 辽宁体育必须有出帧线路", "不通过",
                           f"辽宁体育 {len(lns['lines'])} 条线路，分片可取 {lns['segment_ok']} 条，抽帧 0 张"))
-    for group in ("央视", "卫视"):
-        rs = by_group.get(group, [])
-        n = sum(1 for r in rs if r["frame"])
-        if args.skip_frames:
-            gates.append(gate(f"G2 {group} 至少有 1 台出帧", "未查",
-                              f"--skip-frames 未抽帧；{group} {len(rs)} 台中 "
-                              f"{sum(1 for r in rs if r['segment_ok'])} 台分片可取"))
-        else:
-            gates.append(gate(f"G2 {group} 至少有 1 台出帧", "通过" if n >= 1 else "不通过",
-                              f"{group} {len(rs)} 台中 {n} 台出帧"))
+
+    watch_lines = sum(len(r["lines"]) for r in watch)
+    watch_framed = sum(r["frame_ok"] for r in watch)
+    # 门禁口径＝用户 2026-10-22 点的「选项B」：一条线路都不删，只看每台第 1 条——
+    # 首条必须抽到帧，且判过是正常节目画面（台标相符）。第 2 条往后只如实列进报告，不卡包。
+    # （原来这一格按「每条线路都要有画面」判，68 台里 66 台含没画面的线路。）
+    first_missing, first_pending, first_bad = [], [], []
+    for r in watch:
+        head = r["lines"][0] if r["lines"] else None
+        if head is None or not head["frame"]:
+            first_missing.append(r["name"])
+            continue
+        logo, picture = line_verdict(report["review"], head)
+        if logo == PENDING or picture == PENDING:
+            first_pending.append(r["name"])
+        elif not (logo.startswith(GOOD_LOGO) and picture.startswith(GOOD_PICTURE)):
+            first_bad.append(f"{r['name']}（{logo}／{picture}）")
+    G2_LABEL = "G2 央视/卫视/辽宁体育 每台第 1 条线路必须有正常画面"
+    if args.skip_frames:
+        gates.append(gate(G2_LABEL, "未查", "--skip-frames 没抽帧，这一格无从判起"))
+    elif not (first_missing or first_pending or first_bad):
+        gates.append(gate(G2_LABEL, "通过",
+                          f"{len(watch)} 台首条线路全部出帧并判为正常节目画面"
+                          f"（共 {watch_lines} 条线路、抽到 {watch_framed} 张，一条没删）"))
+    else:
+        parts = []
+        if first_missing:
+            parts.append(f"首条没画面 {len(first_missing)} 台：" + "、".join(first_missing[:20])
+                         + ("…" if len(first_missing) > 20 else ""))
+        if first_pending:
+            parts.append(f"首条没人判 {len(first_pending)} 台：" + "、".join(first_pending[:10])
+                         + ("…" if len(first_pending) > 10 else ""))
+        if first_bad:
+            parts.append(f"首条画面不正常 {len(first_bad)} 台：" + "、".join(first_bad[:10]))
+        gates.append(gate(G2_LABEL, "不通过",
+                          f"{len(watch)} 台 / {watch_lines} 条线路，"
+                          f"{len(first_missing) + len(first_pending) + len(first_bad)} 台首条不合格；"
+                          + "；".join(parts)))
+
+    bad_logo, bad_picture, unreviewed = [], [], []
+    for r in watch:
+        for line in r["lines"]:
+            if not line["frame"]:
+                continue
+            logo, picture = line_verdict(report["review"], line)
+            tag = f"{r['name']}·线{line['index'] + 1}"
+            # 画面本身不是节目内容就先判红：这一半不需要认台标，指纹命中即定，
+            # 剩下「台标对不对」那一半才要等人写结论。
+            if picture != PENDING and not picture.startswith(GOOD_PICTURE):
+                bad_picture.append(f"{tag}（{picture}）")
+            elif logo == PENDING or picture == PENDING:
+                unreviewed.append(tag)
+            elif not logo.startswith(GOOD_LOGO):
+                bad_logo.append(f"{tag}（{logo}）")
+    if args.skip_frames:
+        gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "未查",
+                          "--skip-frames 没抽帧，没有可判的图"))
+    elif unreviewed:
+        gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "不通过",
+                          f"{len(unreviewed)} 张还没人判：" + "、".join(unreviewed[:15])
+                          + ("…" if len(unreviewed) > 15 else "")))
+    elif bad_logo or bad_picture:
+        gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "不通过",
+                          f"台标不符 {len(bad_logo)} 张：" + "、".join(bad_logo[:10])
+                          + f"；画面异常 {len(bad_picture)} 张：" + "、".join(bad_picture[:10])))
+    else:
+        gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "通过",
+                          f"{watch_framed} 张画面全部判为台标相符 + 正常节目画面"))
+
+    rest = [r for r in results if not r["must_watch"]]
+    if args.scope != "all":
+        gates.append(gate("G4 其他频道至少一条线路有正常画面", "未查",
+                          f"--scope must 只覆盖了必看组；另外 {len(others)} 台没探，"
+                          "要查就加 --scope all"))
+    else:
+        # 「有正常画面」在这一档只能自动判到「抽到帧、且不是已知推广页/测试卡同图」这一层：
+        # 一千多张帧逐张人工看不过来，所以把没见过的广告页漏过去是这一格的已知盲点，写进结论里。
+        no_frame, unseen = [], 0
+        for r in rest:
+            framed = [line for line in r["lines"] if line["frame"]]
+            if not framed:
+                no_frame.append(r["name"])
+                continue
+            if all(fingerprint_hit(line["frame"]) for line in framed):
+                no_frame.append(f"{r['name']}（抽到的帧都是已知推广页/测试卡）")
+                continue
+            reviewed = any((report["review"].get(line["url"]) or {}).get("picture")
+                           for line in framed)
+            if not reviewed:
+                unseen += 1
+        verdict_text = (f"{len(rest)} 台全部至少一条出帧" if not no_frame
+                        else f"{len(no_frame)}/{len(rest)} 台没有可用画面："
+                             + "、".join(no_frame[:20]) + ("…" if len(no_frame) > 20 else ""))
+        gates.append(gate("G4 其他频道至少一条线路有正常画面",
+                          "通过" if not no_frame else "不通过",
+                          verdict_text + f"；其中 {unseen} 台的画面只过了自动指纹、没人看过"))
+
     missing = [r for r in results if any(line["verdict"] == "未测" for line in r["lines"])]
     gates.append(gate(
-        "G3 每一台每条线路都有本次读数", "通过" if not missing else "不通过",
+        "G5 每一台每条线路都有本次读数", "通过" if not missing else "不通过",
         f"{sum(len(r['lines']) for r in results)} 条线路全部有本次读数" if not missing
         else f"{len(missing)} 台含「未测」线路：" + "、".join(r["name"] for r in missing)))
     if args.apk:
         gates.append(gate(
-            "G4 报告描述的目录 == APK 内的目录",
+            "G6 报告描述的目录 == APK 内的目录",
             "通过" if apk_sha == report["catalog_sha256"] else "不通过",
-            f"APK `{report['apk']}` 内 sha256 `{(apk_sha or '')[:16]}…` vs 目录 `{report['catalog_sha256'][:16]}…`"))
+            f"APK `{report['apk']}` 内 sha256 `{(apk_sha or '')[:16]}…` vs 目录 "
+            f"`{report['catalog_sha256'][:16]}…`"))
     else:
-        gates.append(gate("G4 报告描述的目录 == APK 内的目录", "未查", "没传 --apk，这一格没查"))
+        gates.append(gate("G6 报告描述的目录 == APK 内的目录", "未查", "没传 --apk，这一格没查"))
     report["gates"] = gates
 
     (args.out / "prepack_report.json").write_text(

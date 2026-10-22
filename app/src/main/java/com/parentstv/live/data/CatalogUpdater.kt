@@ -65,24 +65,36 @@ class CatalogUpdater(private val context: Context) {
 
         var added = 0
         var changed = false
-        val channels = base.channels.map { channel ->
+        val merged = base.channels.map { channel ->
             val fresh = discovered[normalize(channel.name)].orEmpty()
-                .sortedBy { StreamUrl.isIpv6(it) }
-            // 台标实测属于本台、却常被公开源挂到别名下的线，改挂进来并排在最前。
-            val merged = CatalogMerge.streams(channel.name, channel.streams, fresh)
-            added += merged.count { kept ->
+            // 台标实测属于本台、却常被公开源挂到别名下的线，改挂进来并排在最前；
+            // 新线路之间按 IPv6 优先排（见 CatalogMerge）。
+            val lines = CatalogMerge.streams(channel.name, channel.streams, fresh)
+            added += lines.count { kept ->
                 channel.streams.none { StreamUrl.sameLine(it, kept) }
             }
-            if (merged == channel.streams) {
+            if (lines == channel.streams) {
                 channel
             } else {
                 changed = true
-                channel.copy(streams = merged)
+                channel.copy(streams = lines)
             }
         }
 
+        // 用户 2026-10-22 要求：「立即更新」不只补地址，还要把线路可用性探一遍，
+        // 探到能出画面的那条就排到最前。后台自动更新（force=false）不探，那是要在电视上默默跑的。
+        // 探测范围只覆盖央视/卫视/辽宁体育：全目录 1515 条按 8 路并行要 20 分钟以上，
+        // 这个按钮是按下去要看到结果的那一下，不能挂那么久。
+        val outcomes = if (force) probeAvailability(merged.filter { isMustWatch(it) } ) else null
+        val channels = if (outcomes == null) {
+            merged
+        } else {
+            val probed = outcomes.associateBy { it.channel.id }
+            merged.map { probed[it.id]?.channel ?: it }
+        }
+
         // 只删不增也要落盘，否则清理掉的失效线路会一直留在旧缓存里。
-        if (added > 0 || changed) {
+        if (added > 0 || changed || outcomes != null) {
             val updated = base.copy(channels = channels)
             cacheFile.writeText(json.encodeToString(updated))
         }
@@ -97,8 +109,54 @@ class CatalogUpdater(private val context: Context) {
             totalSources = SOURCES.size,
             lastUpdateAt = now,
             skipped = false,
+            probedLines = outcomes?.sumOf { it.tried },
+            playableChannels = outcomes?.count { it.playable },
+            probedChannels = outcomes?.size,
         )
     }
+
+    /**
+     * 逐频道探线路：一个频道内**串行**、第一条探通就停手；频道之间按 8 个一批并行。
+     *
+     * 频道内串行是必须的——并发探测会把慢源读成超时（10-21 实测同一台 25 分钟内三次读数会翻转），
+     * 那样反而会把本来能看的线排到后面去。
+     */
+    private suspend fun probeAvailability(channels: List<TvChannel>): List<ProbeOutcome> =
+        channels.chunked(PROBE_BATCH).flatMap { batch ->
+            coroutineScope {
+                batch.map { channel -> async(Dispatchers.IO) { probeChannel(channel) } }.awaitAll()
+            }
+        }
+
+    private suspend fun probeChannel(channel: TvChannel): ProbeOutcome {
+        var good = -1
+        for (position in channel.streams.indices) {
+            if (StreamProbe.probe(channel.streams[position]).playable) {
+                good = position
+                break
+            }
+        }
+        if (good < 0) return ProbeOutcome(channel, channel.streams.size, false, false)
+        val ordered = listOf(channel.streams[good]) +
+            channel.streams.filterIndexed { position, _ -> position != good }
+        return ProbeOutcome(channel.copy(streams = ordered), good + 1, true, ordered != channel.streams)
+    }
+
+    private data class ProbeOutcome(
+        val channel: TvChannel,
+        val tried: Int,
+        val playable: Boolean,
+        val reordered: Boolean,
+    )
+
+    /**
+     * 「立即更新」这一档要探的频道范围。
+     *
+     * 口径与 `tools/prepack_report.py` 里的 `is_target()` 一致（央视 + 卫视 + 辽宁体育），
+     * 两边不一致的话，设备上看到的线路次序和打包前那份报告就对不上表。
+     */
+    private fun isMustWatch(channel: TvChannel): Boolean =
+        channel.subgroup == "央视" || channel.subgroup == "卫视" || channel.name == "辽宁体育"
 
     private fun fetchAny(mirrors: List<String>): String? {
         for (url in mirrors) {
@@ -176,13 +234,27 @@ class CatalogUpdater(private val context: Context) {
         val totalSources: Int,
         val lastUpdateAt: Long,
         val skipped: Boolean,
+        val probedLines: Int? = null,
+        val playableChannels: Int? = null,
+        val probedChannels: Int? = null,
     ) {
         val message: String
-            get() = when {
-                skipped -> "刚刚已检查过，稍后再试"
-                successSources == 0 -> "公开源暂时都不可达，已保留现有线路"
-                addedLines == 0 -> "检查了 $successSources/$totalSources 个公开源，没有发现新线路"
-                else -> "已从 $successSources/$totalSources 个公开源补充 $addedLines 条新线路"
+            get() {
+                val head = when {
+                    skipped -> "刚刚已检查过，稍后再试"
+                    successSources == 0 -> "公开源暂时都不可达，已保留现有线路"
+                    addedLines == 0 -> "检查了 $successSources/$totalSources 个公开源，没有发现新线路"
+                    else -> "已从 $successSources/$totalSources 个公开源补充 $addedLines 条新线路"
+                }
+                // 探测只在「立即更新」那一次跑，把探到多少条、多少个频道确认能出画面报出来，
+                // 不然按现在的判据，界面上「可用」和「清单通」这两种绿是同一个颜色。
+                val tail = if (probedChannels == null || probedLines == null) {
+                    null
+                } else {
+                    "已检测央视/卫视/辽宁体育 $probedChannels 个频道、$probedLines 条线路，" +
+                        "$playableChannels 个频道确认能取到画面并排到最前"
+                }
+                return if (tail == null) head else "$head · $tail"
             }
     }
 
@@ -191,6 +263,9 @@ class CatalogUpdater(private val context: Context) {
         const val KEY_LAST_UPDATE = "last_update"
         const val KEY_LAST_ADDED = "last_added"
         const val UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000
+
+        /** 「立即更新」里同时探线路时的并行频道数：太小时整轮要等十几分钟，太大慢源会被读成超时。 */
+        const val PROBE_BATCH = 8
 
         val TVG_NAME = Regex("tvg-name=\"([^\"]*)\"")
 
@@ -215,9 +290,14 @@ class CatalogUpdater(private val context: Context) {
  */
 internal object CatalogMerge {
 
-    /** 改挂进本台的线排最前（台标实测过的那条），再依次是内置线路和公开源新发现的。 */
+    /**
+     * 改挂进本台的线排最前（台标实测过的那条），再依次是内置线路和公开源新发现的；
+     * 新发现的这一批内部按 IPv6 优先（用户 2026-10-22 指令：家里网络有 IPv6 出口，
+     * 而本机没有 v6 出口，v6 线路在本机永远只能读到「连不通」，不该按 IPv4 的次序压在后面）。
+     */
     fun streams(channelName: String, packaged: List<String>, fresh: List<String>): List<String> =
-        (RelabeledStreams.linesFor(channelName) + packaged + fresh)
+        (RelabeledStreams.linesFor(channelName) + packaged +
+            fresh.sortedByDescending { StreamUrl.isIpv6(it) })
             .filterNot { DeadStreams.isDead(it) }
             .filterNot { StreamRules.neverPlayable(it) != null }
             .filterNot { RelabeledStreams.belongsElsewhere(channelName, it) }

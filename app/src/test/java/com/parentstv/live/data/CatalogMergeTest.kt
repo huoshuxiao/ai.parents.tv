@@ -60,4 +60,29 @@ class CatalogMergeTest {
         )
         assertEquals("江西卫视两条原样保留", jiangxi, CatalogMerge.streams("江西卫视", jiangxi, emptyList()))
     }
+
+    /**
+     * 用户 2026-10-22 要求 IPv6 优先：本机没有到那些 v6 源的出口，
+     * 按 IPv4 在前排的话，家里能走的 IPv6 线路在设备上永远排在试完才轮到的位置。
+     */
+    @Test
+    fun newlyFoundIpv6LinesGoAheadOfNewlyFoundIpv4Ones() {
+        val v6 = "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001130/index.m3u8"
+        val v6b = "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000001334/index.m3u8"
+        val v4 = "http://148.135.93.213/live.php?id=四川卫视"
+        val v4b = "http://iptv.huuc.edu.cn/hls/schd.m3u8"
+        val merged = CatalogMerge.streams("某某卫视", listOf(v4b), listOf(v4, v6b, v6))
+        // sortedByDescending 是稳定排序：两条 v6 之间保持公开源给的原次序（v6b 在 v6 前）。
+        assertEquals("已有的线路仍在前，新线路里 IPv6 排在 IPv4 前面",
+            listOf(v4b, v6b, v6, v4), merged)
+    }
+
+    @Test
+    fun ipv6PreferenceOnlyReordersTheNewlyFoundBatch() {
+        // 正对照的另一半：IPv6 优先不许把「新发现」的线插到内置线路前面。
+        val packaged = listOf("http://ep.b1791.com/php/sctv.php?id=scws")
+        val v6 = "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001130/index.m3u8"
+        val merged = CatalogMerge.streams("某某卫视", packaged, listOf(v6))
+        assertEquals(listOf(packaged[0], v6), merged)
+    }
 }

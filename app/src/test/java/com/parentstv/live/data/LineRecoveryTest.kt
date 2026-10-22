@@ -135,4 +135,41 @@ class LineRecoveryTest {
             }
         }
     }
+
+    @Test
+    fun unplayedLineSwitchesOnTheFirstStallUnderTheNewDefault() {
+        // 播放器现在给「没播过的线路」传 sameLineReconnects = 0：
+        // 设置里那个等待时间（默认 10 秒）一到就换下一条，不再原地重连两次。
+        assertEquals(
+            Action.NextLine,
+            LineRecovery.action(
+                lineHasPlayed = false, reconnectsOnLine = 0, sameLineReconnects = 0,
+                lineIndex = 0, lastLineIndex = 1,
+            ),
+        )
+        assertEquals(
+            Action.NextChannel,
+            LineRecovery.action(
+                lineHasPlayed = false, reconnectsOnLine = 0, sameLineReconnects = 0,
+                lineIndex = 1, lastLineIndex = 1,
+            ),
+        )
+        // 负对照：把生产参数换回旧的那一档，同一格必须给出不同结论，
+        // 否则上面两格是恒真的空壳。
+        assertEquals(
+            Action.ReconnectSameLine,
+            LineRecovery.action(
+                lineHasPlayed = false, reconnectsOnLine = 0, sameLineReconnects = 2,
+                lineIndex = 0, lastLineIndex = 1,
+            ),
+        )
+        // 播过的线路不受这一档影响：传进来的重连次数是多少都不许换线。
+        assertEquals(
+            Action.ReconnectSameLine,
+            LineRecovery.action(
+                lineHasPlayed = true, reconnectsOnLine = 0, sameLineReconnects = 0,
+                lineIndex = 0, lastLineIndex = 1,
+            ),
+        )
+    }
 }

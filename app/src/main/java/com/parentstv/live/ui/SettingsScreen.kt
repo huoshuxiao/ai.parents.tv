@@ -78,6 +78,7 @@ fun SettingsScreen(
     var rememberLastChannel by remember { mutableStateOf(prefs.rememberLastChannel) }
     var epgEnabled by remember { mutableStateOf(prefs.epgEnabled) }
     var showResolution by remember { mutableStateOf(prefs.showVideoResolution) }
+    var lineSwitchSeconds by remember { mutableStateOf(prefs.lineSwitchSeconds) }
     BackHandler {
         if (!showKeySettings && !confirmClear) onBack()
     }
@@ -173,11 +174,11 @@ fun SettingsScreen(
                     StatRow("更新周期", "每 12 小时")
                     Text(
                         text = updateMessage
-                            ?: "每 12 小时自动检查，只补充同名频道线路。",
+                            ?: "每 12 小时自动补同名频道的新线路；按「立即更新」还会检测央视/卫视/辽宁体育每条线路能不能取到画面。",
                         color = TvColors.TextSecondary,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
-                        maxLines = 2,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(10.dp))
@@ -265,12 +266,23 @@ fun SettingsScreen(
                         prefs.showVideoResolution = false
                     },
                 )
+                PrefChipsRow(
+                    title = "自动换线等待时间",
+                    description = "一条线路卡住这么久就换下一条；已经播过的线路不会因此被换掉。默认 10 秒。",
+                    options = LINE_SWITCH_OPTIONS.map { "${it} 秒" },
+                    selected = LINE_SWITCH_OPTIONS.indexOf(lineSwitchSeconds),
+                    onSelect = { position ->
+                        val seconds = LINE_SWITCH_OPTIONS[position]
+                        lineSwitchSeconds = seconds
+                        prefs.lineSwitchSeconds = seconds
+                    },
+                )
             }
 
             Spacer(Modifier.height(18.dp))
 
             Text(
-                text = "提示：控制栏隐藏后按方向键换台 · 菜单键选线路 · 右上角按键设置可调整",
+                text = "提示：控制栏隐藏时 OK 选台 · 左右键换线路 · 上下键换频道 · 菜单键选线路 · 数字键直接输台号",
                 color = TvColors.TextSecondary.copy(alpha = 0.7f),
                 fontSize = 12.sp,
             )
@@ -451,7 +463,7 @@ private fun KeySettingsDialog(
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "CH+ / CH- 键始终用于换台；长按与数字键保持系统默认。",
+                text = "CH+ / CH- 键始终用于换台。控制栏隐藏时：OK 键选台、左右键换线路、数字键直接输台号（停手 2.5 秒后跳台）。",
                 color = TvColors.TextSecondary.copy(alpha = 0.7f),
                 fontSize = 11.sp,
             )
@@ -576,11 +588,55 @@ private fun PrefSwitchRow(
     }
 }
 
+/** 一格设置项带多个候选（这里给「自动换线等待时间」用）。 */
+@Composable
+private fun PrefChipsRow(
+    title: String,
+    description: String,
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = TvColors.TextPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = description,
+                color = TvColors.TextSecondary,
+                fontSize = 12.sp,
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEachIndexed { position, label ->
+                KeyChoiceChip(
+                    label = label,
+                    selected = position == selected,
+                    onClick = { onSelect(position) },
+                )
+            }
+        }
+    }
+}
+
 private fun directionLabel(action: DirectionKeyAction): String = when (action) {
     DirectionKeyAction.ZapPrevious -> "换到上一个台"
     DirectionKeyAction.ZapNext -> "换到下一个台"
     DirectionKeyAction.MoveFocus -> "只移动焦点"
 }
+
+private val LINE_SWITCH_OPTIONS = listOf(5, 10, 15, 20, 30)
 
 @Composable
 private fun SettingsCard(

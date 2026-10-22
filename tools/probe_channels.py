@@ -177,7 +177,12 @@ def kill_process_group(process: subprocess.Popen) -> None:
         pass
 
 
-def capture_frames(url: str, work_dir: Path, timeout_seconds: int) -> dict:
+def capture_frames(url: str, work_dir: Path, timeout_seconds: int, native: bool = False) -> dict:
+    """抽帧。native=True 时不缩放，jpg 的尺寸就是这条流的真实画面尺寸。
+
+    默认仍出 480x270 缩略图（拼总览图要看几百张）；要按分辨率给线路排名、
+    或要看清台标/二维码，就得用 native——缩放过的图这两件事都办不到。
+    """
     if work_dir.exists():
         shutil.rmtree(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -193,13 +198,14 @@ def capture_frames(url: str, work_dir: Path, timeout_seconds: int) -> dict:
         "--aout=dummy",
         "--avcodec-hw=none",
         "--quiet",
-        "--ipv4",
         "--http-user-agent", UA,
         "--video-filter=scene",
         "--scene-format=jpg",
-        f"--scene-width={FRAME_WIDTH}",
-        f"--scene-height={FRAME_HEIGHT}",
         "--scene-ratio=50",
+    ]
+    if not native:
+        command += [f"--scene-width={FRAME_WIDTH}", f"--scene-height={FRAME_HEIGHT}"]
+    command += [
         "--scene-path", str(work_dir),
         "--scene-prefix=frame_",
         "--run-time=7",

@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "generatedAt": "2026-10-21T11:31:15Z",
+ "generatedAt": "2026-10-21T18:50:54Z",
  "sourceNote": "频道与线路来自互联网公开 IPTV 列表，仅用于学习与个人测试；线路可能随时失效，应用会自动尝试备用线路。",
  "categories": [
   {
@@ -97,6 +97,7 @@
    "logo": "https://live.fanmingming.com/tv/CCTV1.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv1hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001022/index.m3u8",
     "http://69.30.245.50/live/cctv1.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225618/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225630/index.m3u8",
@@ -104,8 +105,7 @@
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225762/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221226221/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221226225/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225918/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001022/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225918/index.m3u8"
    ]
   },
   {
@@ -116,10 +116,10 @@
    "logo": "https://live.fanmingming.com/tv/CCTV2.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv2hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001220/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225619/index.m3u8",
     "http://39.135.138.60:18890/PLTV/88888910/224/3221225643/index.m3u8",
-    "http://39.134.115.163:8080/PLTV/88888910/224/3221225619/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001220/index.m3u8"
+    "http://39.134.115.163:8080/PLTV/88888910/224/3221225619/index.m3u8"
    ]
   },
   {
@@ -130,11 +130,11 @@
    "logo": "https://live.fanmingming.com/tv/CCTV3.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv3hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001186/index.m3u8",
+    "http://222.169.85.8:9901/tsfile/live/0003_1.m3u8?key=txiptv&playlive=1&authid=0",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225634/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225647/index.m3u8",
-    "http://39.134.115.163:8080/PLTV/88888910/224/3221225647/index.m3u8",
-    "http://222.169.85.8:9901/tsfile/live/0003_1.m3u8?key=txiptv&playlive=1&authid=0",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001186/index.m3u8"
+    "http://39.134.115.163:8080/PLTV/88888910/224/3221225647/index.m3u8"
    ]
   },
   {
@@ -145,9 +145,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV4.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv4hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001221/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225621/index.m3u8",
-    "http://39.134.115.163:8080/PLTV/88888910/224/3221225621/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001221/index.m3u8"
+    "http://39.134.115.163:8080/PLTV/88888910/224/3221225621/index.m3u8"
    ]
   },
   {
@@ -159,6 +159,7 @@
    "streams": [
     "http://39.134.61.218/PLTV/88888888/224/3221227021/index.m3u8",
     "http://gmxw.7766.org:808/hls/93/index.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001187/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225633/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225751/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225752/index.m3u8",
@@ -166,8 +167,7 @@
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225754/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225755/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225756/index.m3u8",
-    "http://39.134.115.163:8080/PLTV/88888910/224/3221225633/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001187/index.m3u8"
+    "http://39.134.115.163:8080/PLTV/88888910/224/3221225633/index.m3u8"
    ]
   },
   {
@@ -177,10 +177,10 @@
    "subgroup": "央视",
    "logo": "https://live.fanmingming.com/tv/CCTV5+.png",
    "streams": [
+    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000001334/index.m3u8?virtualDomain=yinhe.live_hls.zte.com",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225649/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225706/index.m3u8",
-    "http://39.134.115.163:8080/PLTV/88888910/224/3221225649/index.m3u8",
-    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000001334/index.m3u8?virtualDomain=yinhe.live_hls.zte.com"
+    "http://39.134.115.163:8080/PLTV/88888910/224/3221225649/index.m3u8"
    ]
   },
   {
@@ -190,9 +190,9 @@
    "subgroup": "央视",
    "logo": "https://live.fanmingming.com/tv/CCTV6.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001188/index.m3u8",
     "http://69.30.245.50/live/cctv6.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225632/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001188/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225632/index.m3u8"
    ]
   },
   {
@@ -203,10 +203,10 @@
    "logo": "https://live.fanmingming.com/tv/CCTV7.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv7hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001236/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225624/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225644/index.m3u8",
-    "http://39.134.115.163:8080/PLTV/88888910/224/3221225624/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001236/index.m3u8"
+    "http://39.134.115.163:8080/PLTV/88888910/224/3221225624/index.m3u8"
    ]
   },
   {
@@ -217,9 +217,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV8.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv8hd.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225635/index.m3u8",
     "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001189/index.m3u8",
-    "http://[2409:8087:2001:20:2800:0:df6e:eb02]:80/wh7f454c46tw2749731958_105918260/ott.mobaibox.com/PLTV/3/224/3221228165/index.m3u8?icpid=3&RTS=1681529690&from=40&popid=40&hms_devid=2039&prioritypopid=40&vqe=3"
+    "http://[2409:8087:2001:20:2800:0:df6e:eb02]:80/wh7f454c46tw2749731958_105918260/ott.mobaibox.com/PLTV/3/224/3221228165/index.m3u8?icpid=3&RTS=1681529690&from=40&popid=40&hms_devid=2039&prioritypopid=40&vqe=3",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225635/index.m3u8"
    ]
   },
   {
@@ -230,9 +230,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV9.png",
    "streams": [
     "https://xykt-fix.github.io/Y77.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001237/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225626/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225646/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001237/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225646/index.m3u8"
    ]
   },
   {
@@ -243,9 +243,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV10.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv10hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001238/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225627/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225636/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001238/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225636/index.m3u8"
    ]
   },
   {
@@ -256,8 +256,8 @@
    "logo": "https://live.fanmingming.com/tv/CCTV11.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv11hd.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225628/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001309/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001309/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225628/index.m3u8"
    ]
   },
   {
@@ -268,9 +268,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV12.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv12hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001239/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225629/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225637/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001239/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225637/index.m3u8"
    ]
   },
   {
@@ -282,9 +282,9 @@
    "streams": [
     "http://74.91.26.218:82/live/cctv13hd.m3u8",
     "http://ali-m-l.cztv.com/channels/lantian/channel21/1080p.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001328/index.m3u8",
     "http://go.bkpcp.top/mg/cctv13",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225638/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001328/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225638/index.m3u8"
    ]
   },
   {
@@ -295,9 +295,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV14.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv14hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001240/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225639/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225640/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001240/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225640/index.m3u8"
    ]
   },
   {
@@ -308,8 +308,8 @@
    "logo": "https://live.fanmingming.com/tv/CCTV15.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv15hd.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225641/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001338/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001338/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225641/index.m3u8"
    ]
   },
   {
@@ -320,9 +320,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV16.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv16hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001258/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221226230/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221226233/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001258/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221226233/index.m3u8"
    ]
   },
   {
@@ -333,9 +333,9 @@
    "logo": "https://live.fanmingming.com/tv/CCTV17.png",
    "streams": [
     "http://74.91.26.218:82/live/cctv17hd.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001241/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225907/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225908/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001241/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225908/index.m3u8"
    ]
   },
   {
@@ -360,10 +360,10 @@
     "https://amg00405-rakutentv-cgtn-rakuten-i9tar.amagi.tv/master.m3u8",
     "https://fastlive.cctvplus.com/out/v1/2b3d8a0c805d437f9dc85b764c2ac599/index.m3u8",
     "https://0472.org/hls/cgtn.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001058/index.m3u8",
     "https://live.cgtn.com/1000/prog_index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225747/index.m3u8",
-    "https://livedoc.cgtn.com/500d/prog_index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001058/index.m3u8"
+    "https://livedoc.cgtn.com/500d/prog_index.m3u8"
    ]
   },
   {
@@ -429,9 +429,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/北京卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001029/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225673/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225674/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001029/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225674/index.m3u8"
    ]
   },
   {
@@ -442,9 +442,9 @@
    "logo": "https://live.fanmingming.com/tv/东方卫视.png",
    "streams": [
     "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001013/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225658/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225659/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001013/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225659/index.m3u8"
    ]
   },
   {
@@ -455,9 +455,9 @@
    "logo": "https://live.fanmingming.com/tv/天津卫视.png",
    "streams": [
     "http://222.169.85.8:9901/tsfile/live/0135_1.m3u8?key=txiptv&playlive=1&authid=0",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001036/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225698/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225739/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001036/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225739/index.m3u8"
    ]
   },
   {
@@ -467,9 +467,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/重庆卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001129/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225692/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225734/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001129/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225734/index.m3u8"
    ]
   },
   {
@@ -479,8 +479,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/河北卫视.png",
    "streams": [
-    "http://101.66.195.192:9901/tsfile/live/0117_1.m3u8?key=txiptv&playlive=0&authid=0",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001229/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001229/index.m3u8",
+    "http://101.66.195.192:9901/tsfile/live/0117_1.m3u8?key=txiptv&playlive=0&authid=0"
    ]
   },
   {
@@ -490,8 +490,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/山西卫视.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225730/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001070/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001070/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225730/index.m3u8"
    ]
   },
   {
@@ -502,8 +502,8 @@
    "logo": "https://live.fanmingming.com/tv/内蒙古卫视.png",
    "streams": [
     "http://play1-qk.nmtv.cn/live/1769652018126032.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225667/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001068/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001068/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225667/index.m3u8"
    ]
   },
   {
@@ -513,9 +513,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/辽宁卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001035/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225696/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225735/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001035/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225735/index.m3u8"
    ]
   },
   {
@@ -525,8 +525,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/吉林卫视.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225680/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001225/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001225/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225680/index.m3u8"
    ]
   },
   {
@@ -536,9 +536,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/黑龙江卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001031/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225690/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225736/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001031/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225736/index.m3u8"
    ]
   },
   {
@@ -548,9 +548,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/江苏卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001033/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225702/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225743/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001033/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225743/index.m3u8"
    ]
   },
   {
@@ -561,11 +561,11 @@
    "logo": "https://live.fanmingming.com/tv/浙江卫视.png",
    "streams": [
     "http://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001023/index.m3u8",
     "http://hw-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225703/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225744/index.m3u8",
-    "http://hw-m-l.cztv.com/channels/lantian/channel001/720p.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001023/index.m3u8"
+    "http://hw-m-l.cztv.com/channels/lantian/channel001/720p.m3u8"
    ]
   },
   {
@@ -575,9 +575,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/安徽卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001037/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225691/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225737/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001037/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225737/index.m3u8"
    ]
   },
   {
@@ -587,8 +587,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/东南卫视.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225657/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001201/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001201/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225657/index.m3u8"
    ]
   },
   {
@@ -599,9 +599,9 @@
    "logo": "https://live.fanmingming.com/tv/江西卫视.png",
    "streams": [
     "http://112.27.5.218:9901/tsfile/live/faacts/0138_1.m3u8?key=txiptv&playlive=1&authid=0",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001034/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225705/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225746/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001034/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225746/index.m3u8"
    ]
   },
   {
@@ -611,10 +611,10 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/山东卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001028/index.m3u8",
     "http://lives.jnnews.tv/video/s10001-SDTV/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225697/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225738/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001028/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225738/index.m3u8"
    ]
   },
   {
@@ -646,9 +646,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/湖北卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001027/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225699/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225740/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001027/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225740/index.m3u8"
    ]
   },
   {
@@ -659,9 +659,9 @@
    "logo": "https://live.fanmingming.com/tv/湖南卫视.png",
    "streams": [
     "https://txmov2.a.kwimgs.com/bs3/video-hls/5199687338554291078_hlsb.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001026/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225704/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225745/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001026/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225745/index.m3u8"
    ]
   },
   {
@@ -672,9 +672,9 @@
    "logo": "https://live.fanmingming.com/tv/广东卫视.png",
    "streams": [
     "https://txmov2.a.kwimgs.com/upic/2023/01/26/09/BMjAyMzAxMjYwOTE3NDVfNzM5MzQzNzIyXzk0NjI1OTUwNTA3XzBfMw==_b_B81ddda927d33445d544befd008e60109.mp4",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001032/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225701/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225742/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001032/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225742/index.m3u8"
    ]
   },
   {
@@ -685,9 +685,9 @@
    "logo": "https://live.fanmingming.com/tv/深圳卫视.png",
    "streams": [
     "http://gmxw.7766.org:808/hls/45/index.m3u8",
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001030/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225700/index.m3u8",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225741/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001030/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225741/index.m3u8"
    ]
   },
   {
@@ -707,9 +707,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/广西卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001224/index.m3u8",
     "http://39.134.115.191:8080/ysten.jx.chinamobile.com/PLTV/88888888/224/3221226211/2/index.m3u8?fmt=ts2hls",
-    "http://101.66.195.192:9901/tsfile/live/0113_1.m3u8?key=txiptv&playlive=0&authid=0",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001224/index.m3u8"
+    "http://101.66.195.192:9901/tsfile/live/0113_1.m3u8?key=txiptv&playlive=0&authid=0"
    ]
   },
   {
@@ -740,8 +740,8 @@
    "logo": "https://live.fanmingming.com/tv/四川卫视.png",
    "streams": [
     "http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0",
-    "http://ep.b1791.com/php/sctv.php?id=scws",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001130/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001130/index.m3u8",
+    "http://ep.b1791.com/php/sctv.php?id=scws"
    ]
   },
   {
@@ -762,8 +762,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/贵州卫视.png",
    "streams": [
-    "http://101.66.195.137:9901/tsfile/live/0120_1.m3u8?key=txiptv&playlive=0&authid=0",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001184/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001184/index.m3u8",
+    "http://101.66.195.137:9901/tsfile/live/0120_1.m3u8?key=txiptv&playlive=0&authid=0"
    ]
   },
   {
@@ -783,8 +783,8 @@
    "subgroup": "卫视",
    "logo": "https://tb.zbds.top/logo/西藏卫视.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225723/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001072/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001072/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225723/index.m3u8"
    ]
   },
   {
@@ -814,8 +814,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/甘肃卫视.png",
    "streams": [
-    "http://218.13.170.98:9901/tsfile/live/0141_1.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001298/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001298/index.m3u8",
+    "http://218.13.170.98:9901/tsfile/live/0141_1.m3u8"
    ]
   },
   {
@@ -825,9 +825,9 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/青海卫视.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001082/index.m3u8",
     "http://stream.qhbtv.com/qhws/sd/live.m3u8?_upt=f35a89681647856030",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225727/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001082/index.m3u8"
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225727/index.m3u8"
    ]
   },
   {
@@ -848,8 +848,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/宁夏卫视.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225726/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001074/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001074/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225726/index.m3u8"
    ]
   },
   {
@@ -860,8 +860,8 @@
    "logo": "https://live.fanmingming.com/tv/新疆卫视.png",
    "streams": [
     "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd",
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225725/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001065/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001065/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225725/index.m3u8"
    ]
   },
   {
@@ -871,8 +871,8 @@
    "subgroup": "卫视",
    "logo": "https://live.fanmingming.com/tv/兵团卫视.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221226200/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001066/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001066/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221226200/index.m3u8"
    ]
   },
   {
@@ -2513,8 +2513,8 @@
    "subgroup": "上海",
    "logo": "https://tb.zbds.top/logo/上海新闻综合.png",
    "streams": [
-    "http://bp-livetytv.bestv.cn/ch/bestvxwzh.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001014/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001014/index.m3u8",
+    "http://bp-livetytv.bestv.cn/ch/bestvxwzh.m3u8"
    ]
   },
   {
@@ -2524,8 +2524,8 @@
    "subgroup": "上海",
    "logo": "https://tb.zbds.top/logo/上海都市.png",
    "streams": [
-    "http://bp-livetytv.bestv.cn/ch/bestvdspd.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001015/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001015/index.m3u8",
+    "http://bp-livetytv.bestv.cn/ch/bestvdspd.m3u8"
    ]
   },
   {
@@ -9153,12 +9153,12 @@
    "subgroup": "香港",
    "logo": "https://live.fanmingming.com/tv/凤凰卫视中文台.png",
    "streams": [
+    "http://[2409:8087:2001:20:2800:0:df6e:eb24]:80/wh7f454c46tw3553140416_-2021535160/ott.mobaibox.com/PLTV/3/224/3221228527/index.m3u8",
     "http://223.110.245.139/ott.js.chinamobile.com/PLTV/3/224/3221226922/index.m3u8",
     "http://113.117.74.17:8081/hls/37/index.m3u8",
     "https://stream1.freetv.fun/08e5440bb83a804440e341ae792cffc38d6844b04d5a2c7a4fc5ee04a6fe6bc6.m3u8",
     "https://stream1.freetv.fun/e0c859ca201f3d03836f51e08e68b5d21c2f94462c3bc7686058368b63bb6deb.ctv",
-    "https://stream1.freetv.fun/c8ad10f8d135ebbea6b77779874c1d8a6da07d925786ac11f855c0dfa87b4487.m3u8",
-    "http://[2409:8087:2001:20:2800:0:df6e:eb24]:80/wh7f454c46tw3553140416_-2021535160/ott.mobaibox.com/PLTV/3/224/3221228527/index.m3u8"
+    "https://stream1.freetv.fun/c8ad10f8d135ebbea6b77779874c1d8a6da07d925786ac11f855c0dfa87b4487.m3u8"
    ]
   },
   {
@@ -9168,10 +9168,10 @@
    "subgroup": "香港",
    "logo": "https://live.fanmingming.com/tv/凤凰卫视资讯台.png",
    "streams": [
+    "http://[2409:8087:2001:20:2800:0:df6e:eb27]:80/wh7f454c46tw3352677969_1732462333/ott.mobaibox.com/PLTV/3/224/3221228524/index.m3u8",
     "http://223.110.245.167/ott.js.chinamobile.com/PLTV/3/224/3221226923/index.m3u8",
     "http://113.117.74.18:8081/hls/36/index.m3u8",
-    "https://stream1.freetv.fun/8207fefca4ec53194577b2ed278461db2f591ad800e535ba46d497749e2d7ee5.ctv",
-    "http://[2409:8087:2001:20:2800:0:df6e:eb27]:80/wh7f454c46tw3352677969_1732462333/ott.mobaibox.com/PLTV/3/224/3221228524/index.m3u8"
+    "https://stream1.freetv.fun/8207fefca4ec53194577b2ed278461db2f591ad800e535ba46d497749e2d7ee5.ctv"
    ]
   },
   {
@@ -9181,10 +9181,10 @@
    "subgroup": "香港",
    "logo": "https://live.fanmingming.com/tv/凤凰卫视香港台.png",
    "streams": [
+    "http://[2409:8087:2001:20:2800:0:df6e:eb1d]:80/ott.mobaibox.com/PLTV/1/224/3221228530/1.m3u8",
     "http://113.117.74.18:8081/hls/38/index.m3u8",
     "https://stream1.freetv.fun/1d0cd71c154df6f70ed3dbf11b59922a12c9ad1ec4f8f1913fdcc17065a24041.ctv",
-    "https://stream1.freetv.fun/de73fec89305dacef19eafcb697172c30729dd00897cb0d30c80affbb3a582e9.ctv",
-    "http://[2409:8087:2001:20:2800:0:df6e:eb1d]:80/ott.mobaibox.com/PLTV/1/224/3221228530/1.m3u8"
+    "https://stream1.freetv.fun/de73fec89305dacef19eafcb697172c30729dd00897cb0d30c80affbb3a582e9.ctv"
    ]
   },
   {
@@ -10370,9 +10370,9 @@
    "subgroup": "影视轮播",
    "logo": "https://live.fanmingming.com/tv/纯享4K.png",
    "streams": [
+    "http://[2409:8087:2001:20:2800:0:df6e:eb26]:80/ott.mobaibox.com/PLTV/3/224/3221228472/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225786/index.m3u8",
-    "http://39.135.138.58:18890/ysten-businessmobile/live/HD-20M-2160P-chunxiang4k/1.m3u8",
-    "http://[2409:8087:2001:20:2800:0:df6e:eb26]:80/ott.mobaibox.com/PLTV/3/224/3221228472/index.m3u8"
+    "http://39.135.138.58:18890/ysten-businessmobile/live/HD-20M-2160P-chunxiang4k/1.m3u8"
    ]
   },
   {
@@ -10609,8 +10609,8 @@
    "subgroup": "CHC",
    "logo": "https://live.fanmingming.com/tv/CHC家庭影院.png",
    "streams": [
-    "http://59.49.41.41/live.aishang.ctlcdn.com/00000110240323_1/playlist.m3u8?CONTENTID=00000110240323_1",
-    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000002085/index.m3u8?virtualDomain=yinhe.live_hls.zte.com"
+    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000002085/index.m3u8?virtualDomain=yinhe.live_hls.zte.com",
+    "http://59.49.41.41/live.aishang.ctlcdn.com/00000110240323_1/playlist.m3u8?CONTENTID=00000110240323_1"
    ]
   },
   {
@@ -10620,8 +10620,8 @@
    "subgroup": "CHC",
    "logo": "https://live.fanmingming.com/tv/CHC动作电影.png",
    "streams": [
-    "http://59.49.41.41/live.aishang.ctlcdn.com/00000110240324_1/playlist.m3u8?CONTENTID=00000110240324_1",
-    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000002055/index.m3u8?virtualDomain=yinhe.live_hls.zte.com"
+    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000002055/index.m3u8?virtualDomain=yinhe.live_hls.zte.com",
+    "http://59.49.41.41/live.aishang.ctlcdn.com/00000110240324_1/playlist.m3u8?CONTENTID=00000110240324_1"
    ]
   },
   {
@@ -10632,8 +10632,8 @@
    "logo": "https://tb.zbds.top/logo/CHC电影.png",
    "streams": [
     "http://183.237.95.108:9901/tsfile/live/1008_1.m3u8?key=txiptv&playlive=0&authid=0",
-    "http://59.49.41.41/live.aishang.ctlcdn.com/00000110240325_1/playlist.m3u8?CONTENTID=00000110240325_1",
-    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000002065/index.m3u8?virtualDomain=yinhe.live_hls.zte.com"
+    "http://[2409:8087:7000:20:1000::22]:6060/yinhe/2/ch00000090990000002065/index.m3u8?virtualDomain=yinhe.live_hls.zte.com",
+    "http://59.49.41.41/live.aishang.ctlcdn.com/00000110240325_1/playlist.m3u8?CONTENTID=00000110240325_1"
    ]
   },
   {
@@ -10643,9 +10643,9 @@
    "subgroup": "少儿",
    "logo": "https://tb.zbds.top/logo/金鹰卡通.png",
    "streams": [
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001098/index.m3u8",
     "http://223.151.51.27:85/tsfile/live/1016_1.m3u8?key=txiptv&playlive=1&authid=0",
-    "http://101.66.195.192:9901/tsfile/live/1000_1.m3u8?key=txiptv&playlive=0&authid=0",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001098/index.m3u8"
+    "http://101.66.195.192:9901/tsfile/live/1000_1.m3u8?key=txiptv&playlive=0&authid=0"
    ]
   },
   {
@@ -10665,8 +10665,8 @@
    "subgroup": "少儿",
    "logo": "https://live.fanmingming.com/tv/嘉佳卡通.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221226193/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001227/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001227/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221226193/index.m3u8"
    ]
   },
   {
@@ -10686,8 +10686,8 @@
    "subgroup": "少儿",
    "logo": "https://live.fanmingming.com/tv/xuandong.png",
    "streams": [
-    "http://39.135.138.58:18890/PLTV/88888888/224/3221225720/index.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001232/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001232/index.m3u8",
+    "http://39.135.138.58:18890/PLTV/88888888/224/3221225720/index.m3u8"
    ]
   },
   {
@@ -10741,8 +10741,18 @@
    "subgroup": "国内体育",
    "logo": "https://tb.zbds.top/logo/五星体育.png",
    "streams": [
-    "http://bp-livetytv.bestv.cn/ch/bestvwxty.m3u8",
-    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001018/index.m3u8"
+    "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001018/index.m3u8",
+    "http://bp-livetytv.bestv.cn/ch/bestvwxty.m3u8"
+   ]
+  },
+  {
+   "id": "sports-43b78e4159",
+   "name": "风云足球",
+   "category": "sports",
+   "subgroup": "国内体育",
+   "logo": "",
+   "streams": [
+    "http://38.75.136.137:98/gslb/dsdqpub/fyzq.m3u8?auth=testpub"
    ]
   },
   {
@@ -10752,8 +10762,7 @@
    "subgroup": "国内体育",
    "logo": "",
    "streams": [
-    "http://dassby.qqff.top:99/live/辽宁体育/index.m3u8",
-    "http://httplive.slave.bfgd.com.cn:14311/playurl?playtype=live&protocol=http&accesstoken=R5F2408FEU3198804BK78052214IE73560DFP2BF4M340CE68V0Z339CBW1626D4D261E46FEA&playtoken=31608RMZHGPUCXX10&programid=4200000611"
+    "http://dassby.qqff.top:99/live/辽宁体育/index.m3u8"
    ]
   },
   {
