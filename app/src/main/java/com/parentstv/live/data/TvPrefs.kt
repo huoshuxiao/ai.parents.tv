@@ -108,6 +108,9 @@ class TvPrefs(context: Context) {
     /**
      * 一条线路卡多久就算失败、换下一条。用户 2026-10-22 要求做成可配、默认 10 秒：
      * 原来起播阶段写死 25 秒，坏线路一条条试下来等得太久。
+     * 用户 2026-10-23 先说「频道切换时…优化减少换台时长」⇒ 默认压到 5 秒（仍是可配的最小档）。
+     * 16:5x 实测：新补的卫视线首分片要 5.4–5.6 秒，5 秒档下 20 台新卫视只有 5 台能在电视上起画面，
+     * 用户点档「甲」⇒ 默认抬回 10 秒（设置里仍可往下调到 5 秒档）。
      */
     var lineSwitchSeconds: Int
         get() = sp.getInt(KEY_LINE_SWITCH_SECONDS, DEFAULT_LINE_SWITCH_SECONDS)

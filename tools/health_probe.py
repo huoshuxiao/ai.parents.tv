@@ -95,11 +95,23 @@ def looks_like_video(body: bytes) -> str:
         return "mkv"
     if head[:3] == b"FLV":
         return "flv"
+    if head[:4] == b".RMF":
+        return "rmvb"
+    if head[:4] == b"\x30\x82\xb2\x7b":
+        return "asf"
+    if head[:4] == b"RIFF" and body[8:12] == b"AVI ":
+        return "avi"
     if body.lstrip()[:7] == b"#EXTM3U":
         return "playlist"
     if body.lstrip()[:1] == b"<":
         return "html"
     return "binary"
+
+
+# ExoPlayer 没有解复用器的容器（与 app 端 StreamRules.unsupportedExt / StreamProbe.undemuxableContainer 同一档）。
+# 名单要两边一起长：以前这一把只认 flv/mkv，RMVB/ASF/AVI 的正文会被归成 "binary" ⇒
+# 报成「可取到分片」，于是在目录里排到能播的位置、又不进黑名单，而电视上是黑屏。
+UNDEMUXABLE_KINDS = ("flv", "mkv", "rmvb", "asf", "avi")
 
 
 def probe_one(url: str, connect_timeout: float, read_timeout: float) -> dict:
@@ -148,8 +160,8 @@ def probe_one(url: str, connect_timeout: float, read_timeout: float) -> dict:
         return finish(result, started, "非常规响应", f"HTTP {status}")
     if kind == "html":
         return finish(result, started, "返回网页", "")
-    if kind == "flv":
-        return finish(result, started, "容器不支持", "FLV 字节头")
+    if kind in UNDEMUXABLE_KINDS:
+        return finish(result, started, "容器不支持", f"{kind} 字节头")
     if kind == "empty":
         return finish(result, started, "清单空", "")
 
@@ -213,13 +225,17 @@ def probe_one(url: str, connect_timeout: float, read_timeout: float) -> dict:
         result["seg_bytes"] = len(seg_body)
         seg_response.close()
         if (200 <= seg_response.status_code < 300 and len(seg_body) > 1024
-                and seg_kind in ("ts", "fmp4", "mkv", "binary")):
+                and seg_kind in ("ts", "fmp4", "binary")):
             result["segment_ms"] = int((time.time() - started) * 1000)
             return finish(result, started, "可取到分片", seg_kind)
         if seg_kind == "html":
             return finish(result, started, "分片是网页", "")
         if seg_response.status_code in (403, 404, 410):
             return finish(result, started, "分片被拒", f"HTTP {seg_response.status_code}")
+        if seg_kind in UNDEMUXABLE_KINDS:
+            # 分片是真字节，但装的是电视解不开的容器：这一条不是「取不到」，是「取到了也播不出来」，
+            # 标签要分开，因为目录侧靠「容器不支持」这个结论把它排到最后并写进地址黑名单。
+            return finish(result, started, "容器不支持", f"分片 {seg_kind} 字节头")
     return finish(result, started, "分片取不到", str(result.get("seg_status")))
 
 

@@ -28,7 +28,16 @@ class CatalogUpdater(private val context: Context) {
 
     suspend fun refresh(force: Boolean): UpdateResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        if (!force && !isStale(now)) {
+        val repository = CatalogRepository(context)
+        val assets = repository.loadAssets()
+        val cached = repository.loadCacheOrNull()
+        // 应用更新后内置清单会比缓存新：这时要以内置清单为底重新拼，
+        // 否则旧缓存会一直盖住新加的线路，清理和补充都落不到设备上。
+        // 这一步必须在 12 小时节流**之前**做：装 APK 不会重置 lastUpdateAt，
+        // 10-23 13:46 装机后首页仍显示旧目录 44/15，就是被这个节流整个跳过了。
+        val assetsNewer = cached == null || !notOlderThan(cached.generatedAt, assets.generatedAt)
+        val stale = isStale(now)
+        if (!force && !stale && !assetsNewer) {
             return@withContext UpdateResult(
                 addedLines = 0,
                 successSources = 0,
@@ -38,19 +47,20 @@ class CatalogUpdater(private val context: Context) {
             )
         }
 
-        val repository = CatalogRepository(context)
-        val assets = repository.loadAssets()
-        val cached = repository.loadCacheOrNull()
-        // 应用更新后内置清单会比缓存新：这时要以内置清单为底重新拼，
-        // 否则旧缓存会一直盖住新加的线路，清理和补充都落不到设备上。
-        val base = if (cached != null && notOlderThan(cached.generatedAt, assets.generatedAt)) cached else assets
-        val fetched = coroutineScope {
-            SOURCES.map { mirrors ->
-                async(Dispatchers.IO) { fetchAny(mirrors) }
-            }.awaitAll()
+        val base = if (cached != null && !assetsNewer) cached else assets
+        // 只是内置清单变新、又没到自动更新时间：只做本地换底落盘，不发网络请求。
+        val localOnly = !force && !stale
+        val fetched = if (localOnly) {
+            emptyList()
+        } else {
+            coroutineScope {
+                SOURCES.map { mirrors ->
+                    async(Dispatchers.IO) { fetchAny(mirrors) }
+                }.awaitAll()
+            }
         }
         val success = fetched.count { it != null }
-        if (success == 0) {
+        if (fetched.isNotEmpty() && success == 0 && !assetsNewer) {
             return@withContext UpdateResult(
                 addedLines = 0,
                 successSources = 0,
@@ -65,27 +75,40 @@ class CatalogUpdater(private val context: Context) {
 
         var added = 0
         var changed = false
-        val merged = base.channels.map { channel ->
+        val settings = TvPrefs(context)
+        // 目录生成时实测判坏的那些地址（随 channels.json 一起装进 APK）。
+        // 公开源下一次还会把它们带回来，合并时按黑名单挡掉——这是「可用性优于数量」在设备端的那一环。
+        val blocked = base.blockedLines.keys
+        val merged = base.channels.mapNotNull { channel ->
             val fresh = discovered[normalize(channel.name)].orEmpty()
             // 台标实测属于本台、却常被公开源挂到别名下的线，改挂进来并排在最前；
-            // 新线路之间按 IPv6 优先排（见 CatalogMerge）。
-            val lines = CatalogMerge.streams(channel.name, channel.streams, fresh)
+            // 新线路之间按 IPv6 优先排；这台电视真出过画面的那条线顶到第一条（见 CatalogMerge）。
+            val lines = CatalogMerge.streams(channel.name, channel.streams, fresh,
+                settings.lineFor(channel.id), blocked)
             added += lines.count { kept ->
                 channel.streams.none { StreamUrl.sameLine(it, kept) }
             }
-            if (lines == channel.streams) {
-                channel
-            } else {
-                changed = true
-                channel.copy(streams = lines)
+            when {
+                // 挡完一条都不剩：目录侧的规则是「线路清空＝整个台消失」，设备端要一致，
+                // 否则 files/channels_live.json 里会留下一个界面看不见、却占着一个台位的空壳
+                //（10-22 模拟器现读：番禺综合 落盘时连 streams 键都没有，界面数 773、文件数 774）。
+                lines.isEmpty() -> null
+                lines == channel.streams -> channel
+                else -> {
+                    changed = true
+                    channel.copy(streams = lines)
+                }
             }
         }
 
         // 用户 2026-10-22 要求：「立即更新」不只补地址，还要把线路可用性探一遍，
         // 探到能出画面的那条就排到最前。后台自动更新（force=false）不探，那是要在电视上默默跑的。
-        // 探测范围只覆盖央视/卫视/辽宁体育：全目录 1515 条按 8 路并行要 20 分钟以上，
-        // 这个按钮是按下去要看到结果的那一下，不能挂那么久。
-        val outcomes = if (force) probeAvailability(merged.filter { isMustWatch(it) } ) else null
+        // 预算按「这台缺不缺能播的线」分配（用户 2026-10-22：线路可用性优于频道数量）：
+        // 必看台先探，接着探**这台电视上从没出过画面**的台，看过的台不占预算；仍然限时，
+        // 超预算的台留到下一次按按钮，不然这一下要挂十几分钟。
+        val targets = probeTargets(merged, settings)
+        val outcomes = if (force) probeAvailability(targets) { channel -> settings.lineFor(channel.id) } else null
+        val probeSkipped = outcomes?.let { targets.size - it.size }
         val channels = if (outcomes == null) {
             merged
         } else {
@@ -94,24 +117,33 @@ class CatalogUpdater(private val context: Context) {
         }
 
         // 只删不增也要落盘，否则清理掉的失效线路会一直留在旧缓存里。
-        if (added > 0 || changed || outcomes != null) {
+        // 「以内置清单为底重拼过」（`base === assets`：装了新版本、内置清单比缓存新）也必须落盘——
+        // 界面读的是缓存文件，光在内存里换底不换文件，旧缓存里那些新版本已经判坏的线路一条都没被清掉。
+        // （10-22 现读到的形状：升级后若公开源这一轮没补新线、次序也没变，以前这一格直接跳过写盘，
+        //   脏缓存原样留在设备上，界面上的坏线一根没少。）
+        if (added > 0 || changed || outcomes != null || base === assets) {
             val updated = base.copy(channels = channels)
             cacheFile.writeText(json.encodeToString(updated))
         }
-        prefs.edit()
-            .putLong(KEY_LAST_UPDATE, now)
-            .putInt(KEY_LAST_ADDED, added)
-            .apply()
+        val replaced = base === assets
+        val editor = prefs.edit().putInt(KEY_LAST_ADDED, added)
+        // 只做内置目录换底时不算一次「公开源更新」，别把 12 小时计时器一起重置，
+        // 否则装了新包就把本该到点的联网更新往后推 12 小时。
+        if (!localOnly) editor.putLong(KEY_LAST_UPDATE, now)
+        editor.apply()
 
         UpdateResult(
             addedLines = added,
             successSources = success,
             totalSources = SOURCES.size,
-            lastUpdateAt = now,
+            lastUpdateAt = if (localOnly) lastUpdateAt else now,
             skipped = false,
             probedLines = outcomes?.sumOf { it.tried },
             playableChannels = outcomes?.count { it.playable },
             probedChannels = outcomes?.size,
+            probeSkipped = probeSkipped,
+            catalogChanged = replaced || added > 0 || changed,
+            localOnly = localOnly,
         )
     }
 
@@ -121,14 +153,33 @@ class CatalogUpdater(private val context: Context) {
      * 频道内串行是必须的——并发探测会把慢源读成超时（10-21 实测同一台 25 分钟内三次读数会翻转），
      * 那样反而会把本来能看的线排到后面去。
      */
-    private suspend fun probeAvailability(channels: List<TvChannel>): List<ProbeOutcome> =
-        channels.chunked(PROBE_BATCH).flatMap { batch ->
-            coroutineScope {
-                batch.map { channel -> async(Dispatchers.IO) { probeChannel(channel) } }.awaitAll()
+    private suspend fun probeAvailability(channels: List<TvChannel>,
+                                          played: (TvChannel) -> String?): List<ProbeOutcome> {
+        val deadline = System.currentTimeMillis() + PROBE_BUDGET_MS
+        val done = ArrayList<ProbeOutcome>()
+        for (batch in channels.chunked(PROBE_BATCH)) {
+            // 第一批无条件跑（不然一条都没探就成了「没探」）；之后每批起头看一眼预算。
+            if (done.isNotEmpty() && System.currentTimeMillis() >= deadline) break
+            done += coroutineScope {
+                batch.map { channel -> async(Dispatchers.IO) { probeChannel(channel, played(channel)) } }
+                    .awaitAll()
             }
         }
+        return done
+    }
 
-    private suspend fun probeChannel(channel: TvChannel): ProbeOutcome {
+    /**
+     * 「立即更新」这一档要探的频道，按**缺不缺能播的线**排，不按分类排：
+     * 必看台（央视/卫视/辽宁体育）先探，然后是这台电视上从没出过画面的台，
+     * 已经看过的台（[TvPrefs.lineFor] 有记录）不占预算。上限 [PROBE_LIMIT] 个。
+     */
+    private fun probeTargets(channels: List<TvChannel>, prefs: TvPrefs): List<TvChannel> {
+        val must = channels.filter { isMustWatch(it) }
+        val blind = channels.filter { !isMustWatch(it) && prefs.lineFor(it.id).isNullOrBlank() }
+        return (must + blind).take(PROBE_LIMIT)
+    }
+
+    private suspend fun probeChannel(channel: TvChannel, played: String?): ProbeOutcome {
         var good = -1
         for (position in channel.streams.indices) {
             if (StreamProbe.probe(channel.streams[position]).playable) {
@@ -137,8 +188,11 @@ class CatalogUpdater(private val context: Context) {
             }
         }
         if (good < 0) return ProbeOutcome(channel, channel.streams.size, false, false)
-        val ordered = listOf(channel.streams[good]) +
-            channel.streams.filterIndexed { position, _ -> position != good }
+        // 探到的那条排到最前，但**这台电视真播过的那条更靠前**（用户 2026-10-21 指令：
+        // 已播过的线路绝不自动换线/换台）。以前这里直接把探到的第一条顶上去，
+        // 于是按一次「立即更新」就可能把父母天天看的那条线从第 1 位挪走——
+        // 播放中确实不换线（LineRecovery），但下次进这个台要先试的就是别的地址了。
+        val ordered = CatalogMerge.probeOrder(channel.streams, good, played)
         return ProbeOutcome(channel.copy(streams = ordered), good + 1, true, ordered != channel.streams)
     }
 
@@ -237,11 +291,17 @@ class CatalogUpdater(private val context: Context) {
         val probedLines: Int? = null,
         val playableChannels: Int? = null,
         val probedChannels: Int? = null,
+        val probeSkipped: Int? = null,
+        // 这一轮有没有把设备上的目录文件换掉（内置清单换底、补线、删线、重排都算）。
+        // 界面以前只在 addedLines>0 时重新读盘，本地换底和只删不增的情况会被漏掉。
+        val catalogChanged: Boolean = false,
+        val localOnly: Boolean = false,
     ) {
         val message: String
             get() {
                 val head = when {
                     skipped -> "刚刚已检查过，稍后再试"
+                    localOnly -> "已应用新版内置目录（未联网补充线路）"
                     successSources == 0 -> "公开源暂时都不可达，已保留现有线路"
                     addedLines == 0 -> "检查了 $successSources/$totalSources 个公开源，没有发现新线路"
                     else -> "已从 $successSources/$totalSources 个公开源补充 $addedLines 条新线路"
@@ -251,8 +311,11 @@ class CatalogUpdater(private val context: Context) {
                 val tail = if (probedChannels == null || probedLines == null) {
                     null
                 } else {
-                    "已检测央视/卫视/辽宁体育 $probedChannels 个频道、$probedLines 条线路，" +
-                        "$playableChannels 个频道确认能取到画面并排到最前"
+                    val base = "已检测 $probedChannels 个频道（必看台 + 这台没出过画面的台）、" +
+                        "$probedLines 条线路，$playableChannels 个频道确认能取到画面并排到最前"
+                    if (probeSkipped != null && probeSkipped > 0) {
+                        "$base；还有 $probeSkipped 个台没排上，下次再按一次"
+                    } else base
                 }
                 return if (tail == null) head else "$head · $tail"
             }
@@ -266,6 +329,12 @@ class CatalogUpdater(private val context: Context) {
 
         /** 「立即更新」里同时探线路时的并行频道数：太小时整轮要等十几分钟，太大慢源会被读成超时。 */
         const val PROBE_BATCH = 8
+
+        /** 一次「立即更新」最多探多少个台（必看台 + 没出过画面的台，按这个顺序截断）。 */
+        const val PROBE_LIMIT = 200
+
+        /** 探测预算：到点就把剩下的台留到下一次按按钮，别让一个按钮挂十几分钟。 */
+        const val PROBE_BUDGET_MS = 90_000L
 
         val TVG_NAME = Regex("tvg-name=\"([^\"]*)\"")
 
@@ -295,11 +364,53 @@ internal object CatalogMerge {
      * 新发现的这一批内部按 IPv6 优先（用户 2026-10-22 指令：家里网络有 IPv6 出口，
      * 而本机没有 v6 出口，v6 线路在本机永远只能读到「连不通」，不该按 IPv4 的次序压在后面）。
      */
-    fun streams(channelName: String, packaged: List<String>, fresh: List<String>): List<String> =
-        (RelabeledStreams.linesFor(channelName) + packaged +
-            fresh.sortedByDescending { StreamUrl.isIpv6(it) })
-            .filterNot { DeadStreams.isDead(it) }
-            .filterNot { StreamRules.neverPlayable(it) != null }
-            .filterNot { RelabeledStreams.belongsElsewhere(channelName, it) }
-            .distinctBy { StreamUrl.canonical(it) }
+    fun streams(channelName: String, packaged: List<String>, fresh: List<String>,
+                playable: String? = null, blocked: Set<String> = emptySet()): List<String> =
+        putPlayableFirst(
+            (RelabeledStreams.linesFor(channelName) + packaged +
+                fresh.sortedByDescending { StreamUrl.isIpv6(it) })
+                .filterNot { DeadStreams.isDead(it) || isBlocked(it, blocked, playable) }
+                .filterNot { StreamRules.neverPlayable(it) != null }
+                .filterNot { RelabeledStreams.belongsElsewhere(channelName, it) }
+                .distinctBy { StreamUrl.canonical(it) },
+            playable,
+        )
+
+    /**
+     * 目录证据判坏的地址：公开源下一次还会把它带回来，合并时按归一键挡掉。
+     *
+     * 「这台电视真出过画面」的那条**例外**（用户 2026-10-22 指令：已播过的线路绝不自动换线/换台）——
+     * 这台机器（与电视同一个宽带、有 IPv6 出口）抽帧看到的坏，抵不过那台电视真播出来过一副画面，那种线留着。
+     */
+    fun isBlocked(stream: String, blocked: Set<String>, played: String? = null): Boolean {
+        if (StreamUrl.canonical(stream) !in blocked) return false
+        return played.isNullOrBlank() || !StreamUrl.sameLine(stream, played)
+    }
+
+    /**
+     * 「立即更新」探测之后怎么排这一台的线路：探到的那条上到第 1 位，
+     * 但这台电视真播过（或用户手工选过）的那条永远压在它前面。
+     *
+     * 次序反过来就是 bug：探测是在这台机器的网络上看到的，而播过那条线是在父母眼前出过画面的。
+     */
+    fun probeOrder(streams: List<String>, goodIndex: Int, played: String?): List<String> =
+        putPlayableFirst(
+            listOf(streams[goodIndex]) + streams.filterIndexed { position, _ -> position != goodIndex },
+            played,
+        )
+
+    /**
+     * 把这台电视**真出过画面**（或用户手工选过）的那条线顶到第一条。
+     *
+     * 「线路可用性优于频道数量」（用户 2026-10-22 指令）：设备上验过的线比目录里排头的
+     * 没验过的线值钱，所以它一旦存在就排最前，连改挂那条也让在它后面
+     * ——我这台机器上抽帧认过台标，不等于那台电视当时真播得出来。
+     * 写法不同但归一后是同一条也算命中；没命中或没给验过的线就原样返回。
+     */
+    fun putPlayableFirst(streams: List<String>, playable: String?): List<String> {
+        if (playable.isNullOrBlank()) return streams
+        val index = streams.indexOfFirst { StreamUrl.sameLine(it, playable) }
+        if (index <= 0) return streams
+        return listOf(streams[index]) + streams.filterIndexed { position, _ -> position != index }
+    }
 }

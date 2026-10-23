@@ -27,6 +27,10 @@ class StreamProbeTest {
 
     private val ts = ByteArray(2_048) { index -> if (index == 0) 0x47 else (index % 251).toByte() }
 
+    /** huya 那种代理直连：地址里没有 `.flv`，正文却是 FLV 头（本机闻出容器不支持的 53 条里有 13 条是这种）。 */
+    private val flv: ByteArray = byteArrayOf('F'.code.toByte(), 'L'.code.toByte(), 'V'.code.toByte(), 0x08, 0x04) +
+        ByteArray(2_048) { (it % 251).toByte() }
+
     @Before
     fun setUp() {
         server = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
@@ -96,9 +100,17 @@ class StreamProbeTest {
         // 内容型标成 text/html、正文却是 #EXTM3U 的源：清单这一层要认。
         "/hls-mislabeled" -> Triple(
             200,
-            "Content-Type: text/html; charset=utf-8",
+            "Content-Type: application/vnd.apple.mpegurl",
             "#EXTM3U\n#EXTINF:5,\nsegment.ts\n".toByteArray(),
         )
+        // 地址里根本没有 .flv，正文是 FLV 头：扩展名那把尺看不见，只有闻字节才拦得住。
+        "/huya/11342412" -> Triple(200, "Content-Type: video/x-flv", flv)
+        "/hls-flv.m3u8" -> Triple(
+            200,
+            "Content-Type: application/vnd.apple.mpegurl",
+            "#EXTM3U\n#EXTINF:10,\nclip\n".toByteArray(),
+        )
+        "/clip" -> Triple(200, "Content-Type: application/octet-stream", flv)
         else -> Triple(404, "Content-Type: text/plain", "not found".toByteArray())
     }
 
@@ -204,5 +216,50 @@ class StreamProbeTest {
     fun variantRefsReadsStreamInfLines() {
         val text = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4000\nhigh.m3u8\n"
         assertEquals(listOf("low.m3u8", "high.m3u8"), StreamProbe.variantRefs(text))
+    }
+
+    /**
+     * 探测取到字节 ≠ 电视上有画面：ExoPlayer 没有 FLV/MKV/ASF/RM/AVI 的解复用器。
+     * 这一格钉的是**没有扩展名**的那一类 —— 本机闻出容器不支持的 53 条里 13 条是这种
+     * （`https://live.metshop.top/huya/11342412`），只看 URL 结尾的 `StreamRules` 挡不住，
+     * 少了它，按一次「立即更新」会把这种黑屏线报成「可用」并顶到第 1 位。
+     */
+    @Test
+    fun flvWithoutExtensionIsNotReportedAsPlayable() = runBlocking {
+        val result = StreamProbe.probe("$baseUrl/huya/11342412")
+        assertNotNull("清单这一层确实取到了字节", result.responseMs)
+        assertNull("FLV 不许算画面耗时", result.segmentMs)
+        assertFalse("解不开的容器绝不能判成可用", result.playable)
+        assertTrue("错误要落在容器这一层，实际=${result.error}",
+            result.error?.startsWith("容器不支持") == true)
+    }
+
+    @Test
+    fun flvSegmentBehindAPlaylistIsNotReportedAsPlayable() = runBlocking {
+        val result = StreamProbe.probe("$baseUrl/hls-flv.m3u8")
+        assertNotNull("清单是通的", result.responseMs)
+        assertFalse("分片是 FLV ⇒ 不许判可用", result.playable)
+        assertTrue("错误要写出容器，实际=${result.error}", result.error?.startsWith("容器不支持") == true)
+    }
+
+    @Test
+    fun containerSniffingKeepsWhatExoPlayerCanDemux() {
+        // 负对照：TS（0x47）与 MP4（ftyp）是 ExoPlayer 解得开的，闻错成"不支持"就会把能播的线打死。
+        assertNull(StreamProbe.undemuxableContainer(ts))
+        val mp4 = ByteArray(64)
+        mp4[4] = 'f'.code.toByte(); mp4[5] = 't'.code.toByte()
+        mp4[6] = 'y'.code.toByte(); mp4[7] = 'p'.code.toByte()
+        assertNull(StreamProbe.undemuxableContainer(mp4))
+        assertNull(StreamProbe.undemuxableContainer(ByteArray(0)))
+        // 正对照：五种解不开的头部各钉一枚。
+        assertEquals("FLV", StreamProbe.undemuxableContainer(flv))
+        assertEquals("MKV", StreamProbe.undemuxableContainer(
+            byteArrayOf(0x1A, 0x45, 0xDF.toByte(), 0xA3.toByte()) + ByteArray(32)))
+        assertEquals("RMVB", StreamProbe.undemuxableContainer(".RMF".toByteArray() + ByteArray(32)))
+        assertEquals("ASF/WMV", StreamProbe.undemuxableContainer(
+            byteArrayOf(0x30, 0x82.toByte(), 0xB2.toByte(), 0x7B) + ByteArray(32)))
+        val avi = ByteArray(64)
+        "RIFF".toByteArray().copyInto(avi, 0); "AVI ".toByteArray().copyInto(avi, 8)
+        assertEquals("AVI", StreamProbe.undemuxableContainer(avi))
     }
 }

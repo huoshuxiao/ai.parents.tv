@@ -62,7 +62,10 @@ def main() -> int:
     urls = list(dict.fromkeys(u for ch in catalog["channels"] for u in ch["streams"]))
     rng = random.Random(20261021)
     sample = rng.sample(urls, 150)
-    picked = CURATED + sample
+    # 黑名单的键也要进对拍：设备端是拿 StreamUrl.canonical(源里的地址) 去查这些键的，
+    # 两侧归一只要差一个字符（IPv6 方括号那一次就是），整份名单就查不到、判坏等于没判。
+    blocked = list(dict.fromkeys((catalog.get("blockedLines") or {}).keys()))
+    picked = CURATED + sample + blocked
     cases = []
     for url in dict.fromkeys(picked):
         cases.append({
@@ -78,7 +81,7 @@ def main() -> int:
         "cases": cases,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     from collections import Counter
-    print(f"[write] {OUT} cases={len(cases)} verdicts="
+    print(f"[write] {OUT} cases={len(cases)}（含黑名单键 {len(blocked)} 枚）verdicts="
           f"{dict(Counter(c['verdict'] or 'usable' for c in cases))}")
     return 0
 

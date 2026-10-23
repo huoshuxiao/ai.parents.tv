@@ -89,6 +89,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.parentstv.live.data.BackKeyAction
 import com.parentstv.live.data.BeijingTime
+import com.parentstv.live.data.ChannelNumbers
 import com.parentstv.live.data.DirectionKeyAction
 import com.parentstv.live.data.EpgProgram
 import com.parentstv.live.data.EpgRepository
@@ -109,6 +110,8 @@ import kotlinx.coroutines.withContext
 fun PlayerScreen(
     initialChannel: TvChannel,
     initialQueue: List<TvChannel>,
+    numberedChannels: List<TvChannel>,
+    onNumberedJump: (TvChannel) -> Unit,
     categoryName: String,
     favorites: Set<String>,
     prefs: TvPrefs,
@@ -117,13 +120,24 @@ fun PlayerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val queue = remember(initialQueue, initialChannel) {
-        initialQueue.filter { it.streams.isNotEmpty() }.ifEmpty { listOf(initialChannel) }
+    val queue = remember(numberedChannels, initialQueue, initialChannel) {
+        // 用户 2026-10-23 指令：上下键要**全频道**换台、OK 选台也要能选到全央视/卫视，
+        // 「不可以只组内」。所以播放器自己走的这条队列就是整份目录（按数字键那套台号排），
+        // 不再用主页递进来的分组队列；initialQueue 只在目录为空时兜底。
+        numberedChannels.filter { it.streams.isNotEmpty() }
+            .ifEmpty { initialQueue.filter { it.streams.isNotEmpty() } }
+            .ifEmpty { listOf(initialChannel) }
     }
-    var index by remember {
+    var index by remember(initialChannel.id) {
+        // 数字键跨组跳台是把 initialQueue/initialChannel 整体换掉，队列换了而位次没跟着重算，
+        // 落到新队列里的就会是「老队列的那个下标」——所以这一格必须按 initialChannel 重算。
         mutableIntStateOf(queue.indexOfFirst { it.id == initialChannel.id }.coerceAtLeast(0))
     }
     val channel = queue.getOrElse(index) { initialChannel }
+    // 数字键念的是**全频道**台号（用户 2026-10-23：全频道从 1 开始，央视 1-17 对键 1-17，
+    // CCTV-5+ 对键 18，其余依次追加），跟「本组第几台」不是一回事，所以这份表从外面递进来的整份目录算。
+    val channelNumbers = remember(numberedChannels) { ChannelNumbers.table(numberedChannels) }
+    val channelNumber = channelNumbers[channel.id]
     var streamIndex by remember(channel.id) {
         val remembered = prefs.lineFor(channel.id)
         val preferred = if (remembered == null) {
@@ -427,7 +441,7 @@ fun PlayerScreen(
 
                     Player.STATE_ENDED -> {
                         isBuffering = false
-                        statusText = "直播已结束"
+                        statusText = "节目已结束"
                     }
 
                     else -> Unit
@@ -497,18 +511,26 @@ fun PlayerScreen(
         }
     }
 
-    // 数字键停手 2.5 秒后把这串数字当台号用：本组队列里第 N 个台。
+    // 数字键停手 2.5 秒后把这串数字当**全频道台号**用：第 N 台，不管它落在哪一组。
     LaunchedEffect(digitEntry) {
         val typed = digitEntry
         if (typed.isEmpty()) return@LaunchedEffect
         delay(DIGIT_ENTRY_TIMEOUT_MS)
         digitEntry = ""
         val number = typed.toIntOrNull() ?: return@LaunchedEffect
-        if (number in 1..queue.size) {
-            if (number - 1 != index) jumpTo(number - 1)
-        } else {
-            statusText = "本组只有 ${queue.size} 个台，没有第 $number 台"
+        val target = numberedChannels.getOrNull(number - 1)
+        if (target == null) {
+            statusText = "全频道共 ${numberedChannels.size} 个台，没有第 $number 台"
             zapNotice = true
+        } else {
+            val position = queue.indexOfFirst { it.id == target.id }
+            if (position >= 0) {
+                if (position != index) jumpTo(position)
+            } else {
+                // 别的组的台：本组队列里没有它，交给外面换成那一组的队列再进台，
+                // 这样跳过去之后上下键仍然是「在本组里换台」，不会因为一次跳台换了语义。
+                onNumberedJump(target)
+            }
         }
     }
 
@@ -712,7 +734,8 @@ fun PlayerScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "$categoryName · ${channel.subgroup}",
+                        text = (if (channelNumber != null) "台号 $channelNumber · " else "") +
+                            "$categoryName · ${channel.subgroup}",
                         color = Color(0xFFCBD5E1),
                         fontSize = 15.sp,
                     )
@@ -734,16 +757,20 @@ fun PlayerScreen(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = when {
-                            statusText.isNotBlank() -> statusText
-                            isPlaying -> "直播中"
-                            else -> "已暂停"
-                        },
-                        color = if (statusText.isNotBlank()) TvColors.Accent else Color(0xFFCBD5E1),
-                        fontSize = 13.sp,
-                    )
+                    // 播通时这一行不再写字样（用户 10-23：去掉画面上的「直播」文字），暂停/换线提示照旧。
+                    val playStatus = when {
+                        statusText.isNotBlank() -> statusText
+                        isPlaying -> ""
+                        else -> "已暂停"
+                    }
+                    if (playStatus.isNotBlank()) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = playStatus,
+                            color = if (statusText.isNotBlank()) TvColors.Accent else Color(0xFFCBD5E1),
+                            fontSize = 13.sp,
+                        )
+                    }
                     val resolution = if (prefs.showVideoResolution) resolutionLine(videoSize) else null
                     if (resolution != null) {
                         Spacer(Modifier.height(3.dp))
@@ -969,6 +996,8 @@ fun PlayerScreen(
             ChannelPickerDialog(
                 queue = queue,
                 selectedIndex = index,
+                numbers = channelNumbers,
+                totalChannels = numberedChannels.size,
                 favorites = favorites,
                 onSelect = { position ->
                     channelPickerVisible = false
@@ -994,7 +1023,7 @@ private const val RECONNECT_AFTER_STABLE_MS = 60_000L
 private const val RECOVERY_DEBOUNCE_MS = 1_500L
 
 /** 控制栏显示多久后自己收起来（用户 2026-10-22 要求 10 秒，原来写死 5 秒）。 */
-private const val CONTROLS_AUTO_HIDE_MS = 10_000L
+private const val CONTROLS_AUTO_HIDE_MS = 3_000L
 
 /** 数字键选台：停手这么久就把输入的数字当台号。 */
 private const val DIGIT_ENTRY_TIMEOUT_MS = 2_500L
@@ -1200,6 +1229,8 @@ private fun playerKeyHint(prefs: TvPrefs): String {
 private fun ChannelPickerDialog(
     queue: List<TvChannel>,
     selectedIndex: Int,
+    numbers: Map<String, Int>,
+    totalChannels: Int,
     favorites: Set<String>,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -1235,7 +1266,7 @@ private fun ChannelPickerDialog(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = "本组共 ${queue.size} 个台 · 也可以直接用数字键输台号（如 1 2 表示第 12 台）",
+                text = "全频道共 $totalChannels 个台 · 每行最前面那个数就是台号，遥控器按数字键直接输它",
                 color = TvColors.TextSecondary,
                 fontSize = 13.sp,
                 maxLines = 1,
@@ -1252,7 +1283,7 @@ private fun ChannelPickerDialog(
             ) {
                 itemsIndexed(queue, key = { position, channel -> position }) { position, item ->
                     ChannelChoiceRow(
-                        position = position,
+                        number = numbers[item.id],
                         channel = item,
                         selected = position == selectedIndex,
                         favorite = item.id in favorites,
@@ -1284,7 +1315,7 @@ private fun ChannelPickerDialog(
 
 @Composable
 private fun ChannelChoiceRow(
-    position: Int,
+    number: Int?,
     channel: TvChannel,
     selected: Boolean,
     favorite: Boolean,
@@ -1323,7 +1354,7 @@ private fun ChannelChoiceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "${position + 1}",
+            text = number?.toString() ?: "",
             color = if (selected || focused) TvColors.Accent else TvColors.TextSecondary,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,

@@ -35,6 +35,7 @@ import com.parentstv.live.data.BeijingTime
 import com.parentstv.live.data.CatalogRepository
 import com.parentstv.live.data.CatalogUpdater
 import com.parentstv.live.data.ChannelCatalog
+import com.parentstv.live.data.ChannelNumbers
 import com.parentstv.live.data.TvChannel
 import com.parentstv.live.data.TvPrefs
 import kotlinx.coroutines.delay
@@ -65,19 +66,20 @@ fun AppRoot() {
         if (loaded == null) return@LaunchedEffect
 
         catalog = loaded
-        if (updater.isStale()) {
-            updating = true
-            runCatching { updater.refresh(force = false) }
-                .onSuccess { result ->
-                    if (result.addedLines > 0) {
-                        runCatching { repository.load() }.getOrNull()?.let { catalog = it }
-                    }
-                    updateMessage = result.message
-                    lastUpdateAt = updater.lastUpdateAt
+        // 每次启动都让更新器看一眼：内置清单比缓存新时它只做本地换底、不发网络请求。
+        // 以前这里被 isStale() 挡着，装上新 APK 后 12 小时内新目录根本不会上屏
+        // （10-23 13:47 装机实测：包内已是 305 台，首页仍显示旧目录的 44/15）。
+        updating = updater.isStale()
+        runCatching { updater.refresh(force = false) }
+            .onSuccess { result ->
+                if (result.catalogChanged) {
+                    runCatching { repository.load() }.getOrNull()?.let { catalog = it }
                 }
-                .onFailure { updateMessage = "自动更新失败：${it.message ?: "网络错误"}" }
-            updating = false
-        }
+                updateMessage = result.message
+                lastUpdateAt = updater.lastUpdateAt
+            }
+            .onFailure { updateMessage = "自动更新失败：${it.message ?: "网络错误"}" }
+        updating = false
     }
 
     fun refreshLinesNow() {
@@ -87,7 +89,7 @@ fun AppRoot() {
         scope.launch {
             runCatching { updater.refresh(force = true) }
                 .onSuccess { result ->
-                    if (result.addedLines > 0) {
+                    if (result.catalogChanged) {
                         runCatching { repository.load() }.getOrNull()?.let { catalog = it }
                     }
                     updateMessage = result.message
@@ -104,10 +106,26 @@ fun AppRoot() {
         return
     }
 
+    // 数字键台号按整份目录数，跨组也认这个号，所以这份表要在播放器外面算好递进去。
+    val numberedChannels = remember(currentCatalog) {
+        ChannelNumbers.numbered(currentCatalog.playableChannels())
+    }
+
     fun markWatched(channel: TvChannel) {
         prefs.lastChannelId = channel.id
         prefs.lastCategoryId = channel.category
         prefs.setSubgroup(channel.category, channel.subgroup)
+    }
+
+    /** 数字键跳到别的组时，队列换成那一组——与主页点进去时拿到的队列同一个口径。 */
+    fun queueOf(channel: TvChannel): List<TvChannel> {
+        val inCategory = currentCatalog.playableChannels().filter { it.category == channel.category }
+        val subgroups = currentCatalog.categories.firstOrNull { it.id == channel.category }?.subgroups
+        return if (subgroups.isNullOrEmpty() || channel.subgroup.isBlank()) {
+            inCategory
+        } else {
+            inCategory.filter { it.subgroup == channel.subgroup }
+        }
     }
 
     when (val current = screen) {
@@ -144,6 +162,11 @@ fun AppRoot() {
         is Screen.Player -> PlayerScreen(
             initialChannel = current.channel,
             initialQueue = current.queue,
+            numberedChannels = numberedChannels,
+            onNumberedJump = { target ->
+                markWatched(target)
+                screen = Screen.Player(target, queueOf(target))
+            },
             categoryName = currentCatalog.categoryName(current.channel.category),
             favorites = favorites,
             prefs = prefs,

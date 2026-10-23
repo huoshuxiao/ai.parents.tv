@@ -44,3 +44,8 @@ vibe_images/
 gradle/
 
 dist/superseded/
+
+tools/tests/__pycache__/
+
+
+tools/fixtures/

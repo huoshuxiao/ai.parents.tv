@@ -52,13 +52,42 @@ object StreamProbe {
             Kind.EMPTY -> Result(null, null, manifestAt, "无数据")
             // 裸 TS／MP4 直连型：这一把读到的就是媒体字节，不必再取第二层。
             else -> {
-                if (manifest.body.size < MIN_MEDIA_BYTES) {
-                    Result(manifest.ms, null, manifestAt, "首包太小")
-                } else {
-                    Result(manifest.ms, manifest.ms, manifestAt, null)
+                val container = undemuxableContainer(manifest.body)
+                when {
+                    container != null -> Result(manifest.ms, null, manifestAt, "容器不支持：$container")
+                    manifest.body.size < MIN_MEDIA_BYTES -> Result(manifest.ms, null, manifestAt, "首包太小")
+                    else -> Result(manifest.ms, manifest.ms, manifestAt, null)
                 }
             }
         }
+    }
+
+    /**
+     * 闻字节头，判这是不是 ExoPlayer 没有解复用器的容器；不是这类就返回 null（值得当成画面字节）。
+     *
+     * 这一格补的是 [StreamRules.unsupportedContainer] 的洞：那一把只看 URL 结尾的扩展名，
+     * 而本机（tools/health_probe.py 按字节头闻）闻出「容器不支持」的 53 条地址里
+     * **有 13 条根本没有扩展名**（`https://live.metshop.top/huya/11342412` 这种代理直连）。
+     * 少了这一道，电视上按「立即更新」时探测会把这种线报成「可用」并顶到第 1 位——
+     * 播出来是黑屏。MP4（`ftyp`）与裸 TS（0x47）ExoPlayer 能解，不在此列。
+     */
+    internal fun undemuxableContainer(body: ByteArray): String? = when {
+        body startsWith "FLV" -> "FLV"
+        body startsWith byteArrayOf(0x1A, 0x45, 0xDF.toByte(), 0xA3.toByte()) -> "MKV"
+        body startsWith byteArrayOf(0x30, 0x82.toByte(), 0xB2.toByte(), 0x7B) -> "ASF/WMV"
+        body startsWith ".RMF" -> "RMVB"
+        body.size >= 12 && (body startsWith "RIFF") &&
+            String(body, 8, 4, Charsets.ISO_8859_1) == "AVI " -> "AVI"
+        else -> null
+    }
+
+    private infix fun ByteArray.startsWith(prefix: String): Boolean =
+        startsWith(prefix.toByteArray(Charsets.ISO_8859_1))
+
+    private infix fun ByteArray.startsWith(prefix: ByteArray): Boolean {
+        if (size < prefix.size) return false
+        for (i in prefix.indices) if (this[i] != prefix[i]) return false
+        return true
     }
 
     private fun probeMediaFromPlaylist(manifest: Step, text: String, manifestAt: Long): Result {
@@ -96,10 +125,16 @@ object StreamProbe {
                     lastError = nested.error ?: "分片是清单"
                     continue
                 }
-                else -> if (segment.body.size >= MIN_MEDIA_BYTES) {
-                    return Result(manifest.ms, segment.ms, segment.at, null)
-                } else {
-                    lastError = "分片太小"
+                else -> {
+                    val container = undemuxableContainer(segment.body)
+                    when {
+                        // 分片是真媒体字节，但 ExoPlayer 没有这个容器的解复用器：
+                        // 取到字节 ≠ 电视上有画面，接着试下一条，别把它报成「可用」。
+                        container != null -> lastError = "容器不支持：$container"
+                        segment.body.size >= MIN_MEDIA_BYTES ->
+                            return Result(manifest.ms, segment.ms, segment.at, null)
+                        else -> lastError = "分片太小"
+                    }
                 }
             }
         }
