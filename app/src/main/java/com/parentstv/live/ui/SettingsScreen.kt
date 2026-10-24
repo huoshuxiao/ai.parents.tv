@@ -636,7 +636,7 @@ private fun directionLabel(action: DirectionKeyAction): String = when (action) {
     DirectionKeyAction.MoveFocus -> "只移动焦点"
 }
 
-private val LINE_SWITCH_OPTIONS = listOf(5, 10, 15, 20, 30)
+private val LINE_SWITCH_OPTIONS = listOf(5, 10, 15, 20, 30, 50, 120)
 
 @Composable
 private fun SettingsCard(

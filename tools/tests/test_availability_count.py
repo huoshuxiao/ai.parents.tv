@@ -40,6 +40,17 @@
  41 必看台＋台标相符＋测试卡 ⇒ 只降分不删线（evidence() 那一层也要放行，否则 strict_filter 之前台就空了）
  42 负对照：同一形状把卡换成推广页 ⇒ 档 4、被删（例外只吃「测试卡」）
  43 负对照：非必看台同一形状 ⇒ 档 4、被删（豁免不外溢到六组）
+ 44 卫视组删线（用户 10-23 17:5x「不可用线路删除」）：台内「连接超时」线删掉、实证线留下、进 sat_pruned 名单
+ 44b 负对照：同形状非卫视组，台内线路一条不动（这台只删卫视组的线，不外溢）
+ 45 「响应超时」同一把尺删
+ 45b 负对照：设备实测播过的那条「连接超时」线不许删（「已播过的线路绝不换线」盖过删线指令）
+ 46 卫视台只剩「连接超时」但抽过帧的线：删无可删时一条不动（不许把有实证的台删空）
+ 46b 负对照：同一形状把身份换成台标相符 ⇒ 档 0、留下（证明咬的是证据档位那一格，不是台名）
+ 47 「曾经出过真实画面的有台标的线路就留」（用户 10-23 18:5x）：台内同为档 3，抽过帧的那条留下、没实证的同档线删掉
+ 48 特色频道整组删除（用户 10-23 20:0x「删除特色频道」）：有画面实证的台也删、计数单独一格、别的组不动
+ 49 甲（用户 10-23 20:5x 点档）：首分片 >10 秒的慢线挪到台内最后、其余保序
+ 49b 负对照：设备播过的慢线原地不动（「已播过不挪位」盖过甲）
+ 49c 负对照：已排在末位的慢线不记进挪线名单（名单只记真要动的那批）
 跑法：python3 tools/tests/test_availability_count.py    （退出码 0 才算过）
 """
 from __future__ import annotations
@@ -475,8 +486,8 @@ bc.FRESH_RES = {}
 
 _names = {c["name"] for c in json.loads(
     (BASE / "app/src/main/assets/channels.json").read_text(encoding="utf-8"))["channels"]}
-check("29 必看名单本身要能对上现目录：19 台、无重名、每个名字都在目录里找得到（名单写错名字＝闸门恒过）",
-      len(bc.MUST_PLAY_CHANNELS) == 19 and len(set(bc.MUST_PLAY_CHANNELS)) == 19
+check("29 必看名单本身要能对上现目录：20 台、无重名、每个名字都在目录里找得到（名单写错名字＝闸门恒过）",
+      len(bc.MUST_PLAY_CHANNELS) == 20 and len(set(bc.MUST_PLAY_CHANNELS)) == 20
       and all(n in _names for n in bc.MUST_PLAY_CHANNELS),
       f"名单 {len(bc.MUST_PLAY_CHANNELS)} 台、去重 {len(set(bc.MUST_PLAY_CHANNELS))}，"
       f"目录里找不到的：{[n for n in bc.MUST_PLAY_CHANNELS if n not in _names] or '无'}")
@@ -594,8 +605,88 @@ check("43 负对照：这条豁免不外溢到六组——非必看台带着台�
       tier_other[0] == bc.BAD_TIER and not bc.usable("湖南卫视", U13)
       and st10["dropped_no_source"] == 1,
       f"档位={tier_other[0]} 删除={st10['dropped_no_source']}")
+
+# ── 44~46b 卫视组删线（用户 10-23 17:5x「很多频道有多个不可用线路，已验证过的可用线路保留，不可用线路删除」）
+# 只删台内档 3 的线（本机连不通）；档 0/1 留下；设备播过的那条永远不许删；删空了不许把台删没。
+V1 = "http://satproven.example.com/a.m3u8"      # 取到过分片＋抽过帧（档 1，有画面实证）
+V2 = "http://sattimeout.example.com/b.m3u8"     # 连接超时（档 3）
+V3 = "http://satreadtimeout.example.com/c.m3u8" # 响应超时（档 3）
+bc.DROP_DEAD = True
+bc.HEALTH = {canon(V1): {"verdict": "可取到分片"}, canon(V2): {"verdict": "连接超时"},
+             canon(V3): {"verdict": "响应超时"}}
+bc.FRAME_RES = {canon(V1): FR}
+bc.FRESH_RES = {}
+bc.IDENTITY = {}
+bc.FRAME_PLACEHOLDER = {}
+bc.DEVICE_PROOF = {}
+surv44, st44 = run_strict([mk("测试卫视", "cctv", "卫视", [V1, V2, V3])])
+check("44 卫视组删线：台内「连接超时／响应超时」线删掉、实证线留下、删掉的线带台名+归一键+对端结论进 sat_pruned 名单",
+      [c["name"] for c in surv44] == ["测试卫视"] and surv44[0]["streams"] == [V1]
+      and {c for _, c, _ in st44["sat_pruned"]} == {canon(V2), canon(V3)}
+      and {v for _, _, v in st44["sat_pruned"]} == {"连接超时", "响应超时"},
+      f"剩线={surv44[0]['streams']} 删线名单={st44['sat_pruned']}")
+surv44b, st44b = run_strict([mk("测试县台", "local", "河南", [V1, V2])])
+check("44b 负对照：同形状非卫视组，台内线路一条不动（这台只删卫视组的线，不外溢到六组）",
+      surv44b[0]["streams"] == [V1, V2] and st44b["sat_pruned"] == []
+      and st44b["dropped_no_source"] == 0,
+      f"剩线={surv44b[0]['streams']} 删线名单={st44b['sat_pruned']}")
+bc.DEVICE_PROOF = {canon(V2): "测试卫视"}
+surv45, st45 = run_strict([mk("测试卫视", "cctv", "卫视", [V1, V2])])
+check("45 负对照：设备实测播过的那条「连接超时」线不许删（『已播过的线路绝不自动换线』盖过删线指令）",
+      surv45[0]["streams"] == [V1, V2] and st45["sat_pruned"] == [],
+      f"剩线={surv45[0]['streams']} 删线名单={st45['sat_pruned']}")
+bc.DEVICE_PROOF = {}
+bc.FRAME_RES = {canon(V1): FR, canon(V2): FR}
+surv46, st46 = run_strict([mk("测试卫视", "cctv", "卫视", [V2])])
+check("46 卫视台只剩「连接超时」但抽过帧的线：删无可删时一条不动（不许把有画面实证的台删空）",
+      [c["name"] for c in surv46] == ["测试卫视"] and surv46[0]["streams"] == [V2]
+      and st46["sat_pruned"] == [] and st46["dropped_no_source"] == 0,
+      f"剩线={surv46[0]['streams']} 删线名单={st46['sat_pruned']}")
+bc.IDENTITY = {f"测试卫视|{canon(V2)}": "台标相符"}
+surv47, st47 = run_strict([mk("测试卫视", "cctv", "卫视", [V1, V2])])
+check("46b 负对照：同一形状把身份换成台标相符 ⇒ 档 0、留下（证明咬的是证据档位那一格，不是台名）",
+      surv47[0]["streams"] == [V1, V2] and st47["sat_pruned"] == [],
+      f"剩线={surv47[0]['streams']} 删线名单={st47['sat_pruned']}")
+bc.IDENTITY = {}
+surv48, st48 = run_strict([mk("测试卫视", "cctv", "卫视", [V2, V3])])
+check("47 台内同为档 3：抽过帧的那条留下、没实证的那条删掉（『曾经出过真实画面的线就留』按条生效）",
+      surv48[0]["streams"] == [V2]
+      and st48["sat_pruned"] == [("测试卫视", canon(V3), "响应超时")],
+      f"剩线={surv48[0]['streams']} 删线名单={st48['sat_pruned']}")
+surv49, st49 = run_strict([mk("七龙珠", "featured", "影视轮播", [V2]),
+                            mk("咪咕直播 1", "sports", "咪咕直播", [V2])])
+check("48 特色频道整组删除（用户 10-23 20:0x「删除特色频道」）：有画面实证的台也删、计数单独一格、别的组不动",
+      [c["name"] for c in surv49] == ["咪咕直播 1"]
+      and st49["dropped_featured"] == 1 and st49["dropped_no_source"] == 0
+      and st49["sat_pruned"] == [],
+      f"剩台={[c['name'] for c in surv49]} featured删={st49['dropped_featured']}")
+
+# ── 49 甲：慢线挪到台内最后（用户 10-23 20:5x 点档「甲」）
+UA = "http://fast.example.com/a.m3u8"
+UB = "http://slow.example.com/b.m3u8"
+UC = "http://fast.example.com/c.m3u8"
+UD = "http://slow2.example.com/d.m3u8"
+UE = "http://slow3.example.com/e.m3u8"
+health49 = {bc.stream_rules.canon(UB): {"verdict": "可取到分片", "elapsed_ms": 15000},
+            bc.stream_rules.canon(UD): {"verdict": "可取到分片", "elapsed_ms": 15000},
+            bc.stream_rules.canon(UE): {"verdict": "可取到分片", "elapsed_ms": 15000}}
+ch49 = row("甲测试台", [UA, UB, UC])
+chans49, moved49 = bc.move_slow_lines_back([ch49], health49, lambda n, u: False)
+check("49 甲：首分片 >10 秒的慢线挪到台内最后、其余保序",
+      chans49[0]["streams"] == [UA, UC, UB] and moved49 == [("甲测试台", bc.stream_rules.canon(UB))],
+      f"现序={chans49[0]['streams']} 挪={moved49}")
+ch49b = row("甲测试台2", [UA, UD])
+chans49b, moved49b = bc.move_slow_lines_back([ch49b], health49, lambda n, u: u == UD)
+check("49b 负对照：设备播过的慢线原地不动（「已播过不挪位」盖过甲）",
+      chans49b[0]["streams"] == [UA, UD] and moved49b == [],
+      f"现序={chans49b[0]['streams']} 挪={moved49b}")
+ch49c = row("甲测试台3", [UA, UE])
+chans49c, moved49c = bc.move_slow_lines_back([ch49c], health49, lambda n, u: False)
+check("49c 负对照：已排在末位的慢线不记进挪线名单（名单只记真要动的那批）",
+      chans49c[0]["streams"] == [UA, UE] and moved49c == [],
+      f"现序={chans49c[0]['streams']} 挪={moved49c}")
 bc.DROP_DEAD = False
-bc.HEALTH, bc.IDENTITY, bc.FRAME_PLACEHOLDER, bc.FRAME_RES, bc.FRESH_RES = {}, {}, {}, {}, {}
+bc.HEALTH, bc.IDENTITY, bc.FRAME_PLACEHOLDER, bc.FRAME_RES, bc.FRESH_RES, bc.DEVICE_PROOF = {}, {}, {}, {}, {}, {}
 
 print()
 if failures:

@@ -429,7 +429,7 @@ fun PlayerActionButton(
             .focusRequester(focusRequester ?: fallbackFocus)
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -437,9 +437,9 @@ fun PlayerActionButton(
             imageVector = icon,
             contentDescription = null,
             tint = contentColor,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(20.dp),
         )
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             text = label,
             fontSize = 16.sp,

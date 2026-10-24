@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.WifiOff
@@ -66,6 +67,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -81,12 +83,18 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import android.os.SystemClock
+import android.view.SurfaceView
+import com.parentstv.live.data.FreezeWatch
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 import com.parentstv.live.data.BackKeyAction
 import com.parentstv.live.data.BeijingTime
 import com.parentstv.live.data.ChannelNumbers
@@ -104,6 +112,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -159,9 +169,36 @@ fun PlayerScreen(
     val unplayableChannels = remember { mutableSetOf<String>() }
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
+    // 画面冻住这条尺：像素连续 FreezeWatch.SILENCE_MS 不变，就当作这台在喂同一帧。
+    // 动作只有「原地重连」一种，绝不换线、绝不换台（用户 09-29 立的规则：已经出过画面的线路只原地重连）。
+    val freezeState = remember(channel.id, streamIndex) { FreezeWatch.State() }
+    val playerViewRef = remember { mutableStateOf<PlayerView?>(null) }
+    LaunchedEffect(channel.id, streamIndex, retryNonce, isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+        val buf = IntArray(256 * 144)
+        var logged = false
+        while (true) {
+            delay(FreezeWatch.SAMPLE_MS)
+            val surface = (playerViewRef.value?.videoSurfaceView as? SurfaceView) ?: continue
+            val hash = sampleSurfaceHash(surface, buf) ?: continue
+            if (!logged) {
+                logged = true
+                android.util.Log.i("FreezeWatch", "sampling channel=${channel.id} line=${streamIndex + 1} hash=$hash")
+            }
+            if (!FreezeWatch.observe(freezeState, hash, SystemClock.elapsedRealtime())) continue
+            if (reconnectsOnLine >= SAME_LINE_RECONNECTS) continue
+            reconnectsOnLine += 1
+            android.util.Log.i("FreezeWatch", "frozen ${FreezeWatch.SILENCE_MS}ms → 原地重连 channel=${channel.id} line=${streamIndex + 1}")
+            statusText = "线路 ${streamIndex + 1} 画面停了，正在原地重连（第 $reconnectsOnLine 次）…"
+            errorMessage = null
+            isBuffering = true
+            retryNonce += 1
+        }
+    }
     var controlsVisible by remember { mutableStateOf(true) }
     var zapNotice by remember { mutableStateOf(false) }
     var aspectIndex by remember { mutableIntStateOf(0) }
+    var lineSeconds by remember { mutableIntStateOf(prefs.lineSwitchSeconds) }
     var linePickerVisible by remember { mutableStateOf(false) }
     var channelPickerVisible by remember { mutableStateOf(false) }
     // 遥控器数字键选台：数字先进缓冲区，停手 2.5 秒后当成台号跳过去。
@@ -192,19 +229,40 @@ fun PlayerScreen(
     }
     val aspectLabels = listOf("适应", "铺满", "缩放")
 
+    // 数据源超时必须落在「换线等待」以内。原来是 connect 12 秒 / read 18 秒，而看门狗
+    // 默认 10 秒就判失败：一条慢线的 connect 还没走完就被 stop() 掐断在途连接，
+    // 下一次重连又从 DNS 从零开始，永远连不完——屏幕上就是那句不散的「正在连接」。
+    // 压到预算以内，让它要么连上、要么以错误尽快报出来，换线走 onPlayerError 那条快路。
+    // （用户 10-24 指令：这条不靠调大线路时长解决，所以动的是网络超时，不是 lineSwitchSeconds。）
     val httpFactory = remember {
         DefaultHttpDataSource.Factory()
             .setUserAgent(
                 "Mozilla/5.0 (Linux; Android 13; Android TV) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
             )
-            .setConnectTimeoutMs(12_000)
-            .setReadTimeoutMs(18_000)
+            .setConnectTimeoutMs(6_000)
+            .setReadTimeoutMs(12_000)
             .setAllowCrossProtocolRedirects(true)
+    }
+    // 不指定 LoadControl 就是 Media3 的默认档：缓冲要攒满 50 秒才罢休，断流之后
+    // 还要重新攒满 5 秒才肯恢复播放。直播的字节是边播边到的，「攒满 50 秒」等于
+    // 起播后加载器一直满速抢带宽，弱线被自己抢死；那 5 秒门槛就是屏幕上
+    // 迟迟不散的「缓冲中」。压到 20/40 秒 + 起播 1.2 秒 + 断流后 2.5 秒。
+    val loadControl = remember {
+        DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 20_000,
+                /* maxBufferMs = */ 40_000,
+                /* bufferForPlaybackMs = */ 1_200,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500,
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
     }
     val exoPlayer = remember {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setLoadControl(loadControl)
             .build()
             .apply {
                 playWhenReady = true
@@ -300,10 +358,14 @@ fun PlayerScreen(
         onChannelChanged(channel)
     }
 
-    // 节目单整份 12 MB 左右，取一次存 6 小时，切频道不再重复下载；
-    // 关掉开关就不占这次请求。
-    LaunchedEffect(prefs.epgEnabled) {
-        if (!prefs.epgEnabled) return@LaunchedEffect
+    // 节目单整份 12 MB 左右，取一次存 6 小时，切频道不再重复下载；关掉开关就不占这次请求。
+    // 原来是「一进播放器就下」——那 12 MB 正好和首片抢同一条链路，弱网下屏幕上就是
+    // 一句迟迟不散的「正在连接」。改成等第一条线路真的出过画面之后再取，且一场只取一次
+    // （isPlaying 每次断流都会翻，不加这一道就会反复重下 12 MB）。
+    var epgFetched by remember { mutableStateOf(false) }
+    LaunchedEffect(prefs.epgEnabled, isPlaying) {
+        if (!prefs.epgEnabled || !isPlaying || epgFetched) return@LaunchedEffect
+        epgFetched = true
         epgSnapshot = EpgRepository(context).snapshot()
     }
 
@@ -318,17 +380,27 @@ fun PlayerScreen(
         if (!linePickerVisible) return@LaunchedEffect
         lineProbes.clear()
         probingLines = true
-        coroutineScope {
-            channel.streams.forEachIndexed { lineIndex, url ->
-                launch(Dispatchers.IO) {
-                    val result = StreamProbe.probe(url)
-                    withContext(Dispatchers.Main) {
-                        lineProbes[lineIndex] = result
+        try {
+            coroutineScope {
+                // 并发上限 2：一个台几条线就并发几路，每路最长十几秒，全撒出去就是
+                // 自己把正在播的那条首片的带宽抢干——屏幕上就是「缓冲中」。
+                val probeGate = Semaphore(PROBE_CONCURRENCY)
+                channel.streams.forEachIndexed { lineIndex, url ->
+                    launch(Dispatchers.IO) {
+                        probeGate.withPermit {
+                            val result = StreamProbe.probe(url)
+                            withContext(Dispatchers.Main) {
+                                lineProbes[lineIndex] = result
+                            }
+                        }
                     }
                 }
             }
+        } finally {
+            // 关掉面板会取消这个协程，原来这一句在协程体末尾、走不到，
+            // 「检测中…」就永远挂着、「重新检测」按钮一直是灰的。
+            probingLines = false
         }
-        probingLines = false
     }
 
     fun tryNextLine(message: String?) {
@@ -580,25 +652,44 @@ fun PlayerScreen(
             .background(Color.Black)
             .focusRequester(rootFocus)
             .focusable()
-            .onKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+            // 遥控器操作优先级最高（用户 10-23 19:1x「不受弹出影响」）：
+            // 换台键走在预览阶段——控制栏弹出、错误提示弹着、焦点停在按钮上，都不挡上下换台；
+            // 先把这些弹层收起来再换台。选台/选线/节目单是独立窗口，不受这一层影响。
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.DirectionUp -> {
-                        if (!controlsVisible) {
-                            zapUpOrDown(prefs.upKeyAction)
-                        } else {
-                            false
-                        }
+                        controlsVisible = false
+                        errorMessage = null
+                        zapUpOrDown(prefs.upKeyAction)
                     }
 
                     Key.DirectionDown -> {
-                        if (!controlsVisible) {
-                            zapUpOrDown(prefs.downKeyAction)
-                        } else {
-                            false
-                        }
+                        controlsVisible = false
+                        errorMessage = null
+                        zapUpOrDown(prefs.downKeyAction)
                     }
 
+                    Key.ChannelUp -> {
+                        controlsVisible = false
+                        errorMessage = null
+                        zap(-1)
+                        true
+                    }
+
+                    Key.ChannelDown -> {
+                        controlsVisible = false
+                        errorMessage = null
+                        zap(1)
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
                     Key.DirectionLeft -> {
                         if (!controlsVisible) {
                             stepLine(-1)
@@ -615,16 +706,6 @@ fun PlayerScreen(
                         } else {
                             false
                         }
-                    }
-
-                    Key.ChannelUp -> {
-                        zap(-1)
-                        true
-                    }
-
-                    Key.ChannelDown -> {
-                        zap(1)
-                        true
                     }
 
                     // OK 键不再担播放/暂停：控制栏隐藏时它打开「选择频道」，
@@ -704,6 +785,7 @@ fun PlayerScreen(
             update = { view ->
                 view.player = exoPlayer
                 view.resizeMode = aspectModes[aspectIndex]
+                playerViewRef.value = view
             },
             modifier = Modifier.fillMaxSize(),
         )
@@ -844,19 +926,14 @@ fun PlayerScreen(
                     .padding(horizontal = 40.dp, vertical = 26.dp),
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerActionButton(
-                        icon = if (channel.id in favorites) {
-                            Icons.Rounded.Favorite
-                        } else {
-                            Icons.Rounded.FavoriteBorder
-                        },
-                        label = if (channel.id in favorites) "已收藏" else "收藏",
-                        accent = channel.id in favorites,
+                        icon = Icons.Rounded.List,
+                        label = "选线",
                         focusRequester = barFocus,
-                        onClick = { onToggleFavorite(channel) },
+                        onClick = { linePickerVisible = true },
                     )
                     PlayerActionButton(
                         icon = Icons.Rounded.LiveTv,
@@ -882,14 +959,33 @@ fun PlayerScreen(
                         onClick = { aspectIndex = (aspectIndex + 1) % aspectModes.size },
                     )
                     PlayerActionButton(
-                        icon = Icons.Rounded.List,
-                        label = "选线",
-                        onClick = { linePickerVisible = true },
+                        icon = if (channel.id in favorites) {
+                            Icons.Rounded.Favorite
+                        } else {
+                            Icons.Rounded.FavoriteBorder
+                        },
+                        label = if (channel.id in favorites) "已收藏" else "收藏",
+                        accent = channel.id in favorites,
+                        onClick = { onToggleFavorite(channel) },
                     )
                     PlayerActionButton(
                         icon = Icons.Rounded.Schedule,
                         label = "节目单",
                         onClick = { guideVisible = true },
+                    )
+                    PlayerActionButton(
+                        icon = Icons.Rounded.Timer,
+                        label = "时长 ${lineSeconds}秒",
+                        onClick = {
+                            lineSeconds = if (lineSeconds in LINE_SECONDS_OPTIONS) {
+                                LINE_SECONDS_OPTIONS[
+                                    (LINE_SECONDS_OPTIONS.indexOf(lineSeconds) + 1) %
+                                        LINE_SECONDS_OPTIONS.size]
+                            } else {
+                                LINE_SECONDS_OPTIONS[0]
+                            }
+                            prefs.lineSwitchSeconds = lineSeconds
+                        },
                     )
                     Spacer(Modifier.weight(1f))
                     PlayerActionButton(
@@ -1021,6 +1117,11 @@ fun PlayerScreen(
 private const val SAME_LINE_RECONNECTS = 2
 private const val RECONNECT_AFTER_STABLE_MS = 60_000L
 private const val RECOVERY_DEBOUNCE_MS = 1_500L
+// 选线面板一次允许几路并发探测。全撒出去会抢走正在播的那条线的带宽（见上面那段）。
+private const val PROBE_CONCURRENCY = 2
+// 控制栏「时长」按钮的循环档（用户 10-23 19:4x「控制栏增加线路时长选项，10/20/30/50秒」；
+// 20:5x 追加「再加一个120秒，让长时间线路能播」）。
+private val LINE_SECONDS_OPTIONS = listOf(10, 20, 30, 50, 120)
 
 /** 控制栏显示多久后自己收起来（用户 2026-10-22 要求 10 秒，原来写死 5 秒）。 */
 private const val CONTROLS_AUTO_HIDE_MS = 3_000L
@@ -1035,6 +1136,44 @@ private val DIGIT_KEYS: Map<Key, Int> = mapOf(
     Key.NumPad4 to 4, Key.NumPad5 to 5, Key.NumPad6 to 6, Key.NumPad7 to 7,
     Key.NumPad8 to 8, Key.NumPad9 to 9,
 )
+
+/**
+ * 从视频 SurfaceView 上取一小块中心像素算哈希（画面冻住这条尺的采样端）。
+ *
+ * 只取中心 256×144：整幅 1280×720 每 3 秒拷一次在电视盒子上是白给的开销，
+ * 而「画面没在动」这件事在中心一块上一样能看出来（台标与字幕条本来就在边上，
+ * 它们会闪，取中心也顺手把它们排除掉）。PixelCopy 要 API 26，低版本这一格直接不作判。
+ */
+private suspend fun sampleSurfaceHash(view: SurfaceView, buf: IntArray): Long? {
+    if (android.os.Build.VERSION.SDK_INT < 26) return null
+    val w = view.width
+    val h = view.height
+    if (w < 64 || h < 64) return null
+    val rw = minOf(256, w)
+    val rh = minOf(144, h)
+    val left = (w - rw) / 2
+    val top = (h - rh) / 2
+    val rect = android.graphics.Rect(left, top, left + rw, top + rh)
+    val bmp = android.graphics.Bitmap.createBitmap(rw, rh, android.graphics.Bitmap.Config.ARGB_8888)
+    return suspendCancellableCoroutine { cont ->
+        val onDone: (Int) -> Unit = { result ->
+            val hash = if (result == android.view.PixelCopy.SUCCESS) {
+                bmp.getPixels(buf, 0, rw, 0, 0, rw, rh)
+                FreezeWatch.hash(buf.copyOf(rw * rh))
+            } else {
+                null
+            }
+            if (cont.isActive) cont.resume(hash)
+            bmp.recycle()
+        }
+        try {
+            android.view.PixelCopy.request(view, rect, bmp, { result -> onDone(result) }, view.handler)
+        } catch (t: Throwable) {
+            bmp.recycle()
+            if (cont.isActive) cont.resume(null)
+        }
+    }
+}
 
 private fun connectingText(channelName: String, lineIndex: Int): String =
     if (lineIndex == 0) "正在连接 $channelName…" else "正在尝试线路 ${lineIndex + 1}…"

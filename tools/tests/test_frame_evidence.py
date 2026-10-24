@@ -49,7 +49,7 @@ def load(with_placeholder: bool) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         path = Path(fh.name)
     try:
-        bc.FRAME_RES, bc.FRAME_PLACEHOLDER = bc.load_frames(path)
+        bc.FRAME_RES, bc.FRAME_PLACEHOLDER, bc.FRAME_STALLED = bc.load_frames(path)
     finally:
         path.unlink()
 
