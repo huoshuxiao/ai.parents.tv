@@ -42,6 +42,18 @@ HEALTH = {}
 # 所以身份结论优先于分片结论：台标相符才许排第一，画面是别的台/占位页的排到最后。
 IDENTITY = {}
 IDENTITY_GOOD = {"台标相符"}
+# 门禁各轮 `review.json` 里人工看图的台标结论（canonical url -> {logo, channel}）。
+# 身份台账 `identity_review.jsonl` 是手抄的一份，抄漏的那几条（CCTV-11/14/15 的测试卡线就是这么掉的）
+# 会让「有台标」这条真证据在构建侧读不到，所以这一份按轮次累加直接进构建（用户 10-24「保留有台标的线路」）。
+REVIEW_LOGO = {}
+# 同一批 `review.json` 里的「这一帧是不是节目」那一半（只收 测试卡/广告/占位页/推广页 四类）。
+# 为什么要接进来：门禁的 `placeholder` 字段只在**画面指纹命中已知图**时才写，人工看图新认出来的
+# 那一屏购物广告不会落进 `line_frames.jsonl`——于是构建侧看到的还是「正常画面」，
+# 「保留有台标的线路」这条判据在真跑数据上永远不触发（10-24 A/B 实测：链内证据下新旧口径都是 538 条）。
+REVIEW_PICTURE = {}
+# 「台标相符」结论没写台名、而这条地址又同时挂在两个以上台名下 ⇒ 不许替其中任何一个台说话。
+# 由 build() 在候选目录拼齐后算出来（见 AMBIGUOUS_LOGO 赋值处），默认空集是给夹具用的。
+AMBIGUOUS_LOGO = set()
 
 # prepack 抽帧拿到的原生画面尺寸（canonical url -> [宽, 高]）。
 # 只用来在同一证据档里比高下，缺读数不等于线路坏（读 0 当未知）。
@@ -90,6 +102,29 @@ GOOD_VERDICT = "可取到分片"
 NAME_RELATIVE = {"画面是别的台"}
 
 
+def logo_verified(name, url):
+    """这条地址有没有「本台台标相符」的人工看图结论——两个来源，同一把尺。
+
+    ① 手抄的身份台账 `IDENTITY`（键是「台名|地址」）；
+    ② 门禁各轮 `review.json` 里看图写下的 `logo`（键只有地址：行里带 channel 时必须对得上台名；
+      老行没写 channel 的，只在这条地址**只挂在一个台名下**时才作数——挂在两个台名下的那种
+      正是「改挂」那一类，A 台验过的台标不能替 B 台说话，见 `AMBIGUOUS_LOGO`）。
+    以前只认①，结果 CCTV-11/14/15 三条测试卡线明明在 review.json 里被写成「台标相符」，
+    构建侧却读不到 ⇒ 10-23 02:14 那条「有台标就算真出画面」从没为它们生效过，
+    下一次重建会把这三条必看台的线摘掉（10-24 实测）。
+    """
+    canon = stream_rules.canon(url)
+    if IDENTITY.get(f"{name}|{canon}") in IDENTITY_GOOD:
+        return True
+    row = REVIEW_LOGO.get(canon) or {}
+    if not (row.get("logo") or "").startswith("台标相符"):
+        return False
+    owner = row.get("channel") or ""
+    if owner:
+        return owner == name
+    return canon not in AMBIGUOUS_LOGO
+
+
 def card_counts_as_picture(name, url, card=""):
     """「抽到占位页」这一格要不要让位给台标（用户 10-23 02:14「CCTV-4K、CCTV 8K 有台标就算真出画面」）。
 
@@ -103,7 +138,79 @@ def card_counts_as_picture(name, url, card=""):
         return False
     if name not in CARD_IS_PICTURE_CHANNELS:
         return False
-    return IDENTITY.get(f"{name}|{stream_rules.canon(url)}") in IDENTITY_GOOD
+    return logo_verified(name, url)
+
+
+def logo_keeps_line(name, url):
+    """「保留有台标的线路」（用户 10-24 指令）：本台台标验过的地址，抽到广告/占位页只降分、不摘线。
+
+    为什么要有这一格：12:29 那一批 6 条卫视备份线抽到的整屏是购物广告，按旧口径它们会在下一次
+    重建时被摘掉＋拉黑；14:05 复抽同一批地址，4 条已经在放本台节目（《父母爱情》《黑狐之风影》
+    《武松》《军行天下》）。**广告是这台此刻在播的东西，不是这条地址坏了**——摘掉它等于少一条真源。
+
+    三道边界，缺一条都不放行（夹具各盯一半）：
+      ① 身份结论必须是「台标相符」——「画面是别的台」不是本台台标，走 NAME_RELATIVE 那套按名规则；
+      ② 只管「画面不是节目内容」这一族（FRAME_PLACEHOLDER）。播放器解不开的容器、长窗冻帧、
+         对端明确答复坏都在它前面 return，换了台标也还是播不出来／喂旧画面，不在这次放宽里；
+      ③ 只影响**保留**这一侧。「算不算真出画面」（has_picture / 报告侧 card_is_picture）一行没动，
+         所以广告帧照旧进 G2/G3 的红名单，只是这条线不会被摘掉。
+
+    台标证据与 10-23 02:14 那一档同源（都走 logo_verified），一份结论不许抄成两处口径。
+    """
+    return logo_verified(name, url)
+
+
+def no_own_logo(name, url):
+    """本台名下抽到的帧**没有一枚**认得出本台台标 ⇒ 这一条线的画面不算本台画面。
+
+    用户 10-24 点档 #96＝乙。触发形状：安多卫视唯一那条线（`liveout.xntv.tv/a65jur/96iln2.m3u8`）
+    11 枚唯一帧看过 9 枚、16:44 现场复抽 3 枚，全是西宁市台（XNTV 色卡／「新闻综合」蓝黄旋标／
+    《夏都零距离》＋「西宁12345」角标），7 轮人工看图都写「台标是别的台」——旧口径里"有画面"
+    不问"是谁的画面"，于是父母打开「安多卫视」看到的是西宁市台，而这条线还占着画面分。
+
+    四条边界，缺一条都不算（夹具各盯一半）：
+      ① **没有任何观察就不发明**：台账与人工看图都没写过这一 (台名,地址) ⇒ 返回 False，照旧；
+      ② **漂移不算**：只要有一枚观察说「台标相符」就返回 False——延边卫视/CCTV-7/CCTV-8 那三条
+         都是"同一地址时而本台、时而别家或广告"，按 10-21 口径是时刻性现象，不摘；
+      ③ **只有"点名是别的台"才算反证**：结论里要出现「别的台」（台账那枚 verdict 就是
+         `画面是别的台`，人工那批写的是「台标是别的台（画面写着 XNTV…）」）。「台标看不到」不算——
+         河北卫视那条 `event.pull.hebtv.com/live/live101.m3u8` 六轮都写「台标看不到…无法归到河北台名下」，
+         那是"这一帧没台标"（直播外景常常真没有角标），不是"这一帧是别家台的台标"；按字面把它算成反证，
+         第一次跑就多切掉 河北卫视／河北 4K 两台（10-24 实测 306 台，比预期少 2 台），已收窄掉。
+      ④ **不借证**：人工那一枚必须归属对得上本台名才作观察（无归属且地址挂在多个台名下的一律不算），
+         与 `logo_verified` 同一套归属尺，不许两处口径不一。
+    只管**判定层**（算不算画面），不进 `blocked_lines()`：那是"名字与地址的配对"问题，
+    地址本身没坏（同一枚地址在 西宁新闻综合／井研综合／营山电视台 名下是真源），拉黑会把真源一起挡掉。
+    """
+    canon = stream_rules.canon(url)
+    observations = []
+    ident = IDENTITY.get(f"{name}|{canon}")
+    if ident:
+        observations.append(("台账", ident))
+    row = REVIEW_LOGO.get(canon) or {}
+    logo = (row.get("logo") or "").strip()
+    if logo:
+        owner = row.get("channel") or ""
+        if owner == name or (not owner and canon not in AMBIGUOUS_LOGO):
+            observations.append(("人工", logo))
+    return logo_contradicts_station(observations)
+
+
+def logo_contradicts_station(observations):
+    """纯函数那一半：给一批「这一 (台名,地址) 的台标结论」，判有没有一枚认得出本台台标。
+
+    抽出来是因为**两层都要用同一把尺**：构建侧 `no_own_logo()` 与门禁报告侧 G4
+    （`prepack_report` 的 `clean_frame_ok`）各自拼自己的观察列表，判定只能有一处。
+    规则与上面 ①②③ 完全相同：没观察⇒不发明（False）；有一枚「台标相符」⇒漂移（False）；
+    只有点名「别的台」的反证才 True；"台标看不到"不算反证。
+    """
+    for_ours, against = [], []
+    for _, text in observations:
+        if text.startswith("台标相符") or text in IDENTITY_GOOD:
+            for_ours.append(text)
+        elif "别的台" in text:
+            against.append(text)
+    return bool(against) and not for_ours
 
 
 def evidence(url, name=""):
@@ -125,7 +232,9 @@ def evidence(url, name=""):
         # 长窗（分钟级）确认「源没在给新画面」：这是稳定坏，与占位页同级 ⇒ 删线那一侧。
         return (4, 0)
     verdict = IDENTITY.get(key)
-    if FRAME_PLACEHOLDER.get(canon):
+    card = FRAME_PLACEHOLDER.get(canon)
+    human_card = "" if card else review_card(name, canon)
+    if card or human_card:
         # 抽到帧 ≠ 抽到节目：这一条给的是测试卡/带二维码的推广页，和「对端回了 404」同级。
         # 这一格走在身份判定前面（用户 10-22 指令「占位页赢」）：同一地址既被复核过台标、
         # 又被抽到占位页时，肉眼看到的这一帧更硬——按名字留下的那 32 枚是另一回事（usable() 管）。
@@ -135,7 +244,17 @@ def evidence(url, name=""):
         # 正常画面、模拟器也真播过；那是"此刻没节目"的时刻性状态，不是稳定坏（10-21 口径）。
         # 只放宽 has_picture 不够：这一档在 strict_filter 之前就把线摘了，台会整个消失。
         # 推广页那一类不进这个门，别组也不进（夹具 41/42/43 格各盯一半）。
-        if card_counts_as_picture(name, url, FRAME_PLACEHOLDER[canon]):
+        if card_counts_as_picture(name, url, card or human_card):
+            return (1, 0)
+        if logo_keeps_line(name, url):
+            # 「保留有台标的线路」（用户 10-24）：本台台标验过 ⇒ 这一帧是广告只说明此刻在放广告，
+            # 降到档 1（不占第一）但线留着；blocked_lines() 那边由 kept 自动把它摘出黑名单。
+            return (1, 0)
+        if human_card:
+            # 只有人工看图那一格说「这不是节目」时也只降分：指纹是钉死的稳定坏，人工那一枚
+            # 是一次观测——CCTV-6 那条 74.91.26.218 的药品广告帧在 7 份 review.json 里 md5 全等于
+            # 456f0b637421（10-23 03:26 抽的那一张，03:40 被证据搬运抄了 7 遍），不是复现了 7 次。
+            # 按 10-21 口径「稳定坏才删线，时刻性坏只降分」，摘一条必看台的线要等它自己变成指纹。
             return (1, 0)
         return (4, 0)
     if verdict:
@@ -178,6 +297,9 @@ def has_picture_now(name, url):
     if FROZEN.get(canon):
         # 长窗确认源在喂旧画面：这一轮看到的"画面"是同一种画面重复，不算看到了节目。
         return False
+    if no_own_logo(name, url):
+        # 本台名下没有一枚帧认得出本台台标 ⇒ 那是别人家的节目，不算这一轮看到了本台画面。
+        return False
     card = FRAME_PLACEHOLDER.get(canon) or ""
     if card and not card_counts_as_picture(name, url, card):
         return False
@@ -190,6 +312,8 @@ def has_picture(name, url):
     抽到过帧（原生尺寸在案）且不是占位页，且容器是 ExoPlayer 解得开的那种；
     或者抽帧复核过台标相符（那一档本身就是看着帧认出来的）。
     「取到过分片」不算——拉到字节 ≠ 电视上有画面。
+    「画面是别人家的节目」也不算（`no_own_logo`，用户 10-24 #96 乙）——本台名下没有一枚帧认得出本台台标，
+    这条线就不替本台占画面分。
     """
     canon = stream_rules.canon(url)
     row = HEALTH.get(canon)
@@ -198,13 +322,16 @@ def has_picture(name, url):
     if FROZEN.get(canon):
         # 长窗冻帧：抽到过帧不等于抽到节目，同一种画面重复分钟级也是"帧"。
         return False
+    if no_own_logo(name, url):
+        # 「画面是别的台」在这一把尺上同样不算本台画面（用户 10-24 #96 乙）：
+        # 安多卫视那条线抽到 11 枚帧、9 枚看过全是西宁市台，旧口径它照样算"有画面"。
+        return False
     # 用户 10-23 02:14 的口径：**「CCTV-4K、CCTV 8K 有台标就算真出画面，算正常频道线路」**
     # ⇒ 台标复核过「相符」的线走在这把尺最前面，即使那一帧是频道自己的测试卡/色条卡。
     # 凌晨的 CCTV-4K／CCTV-8K／CCTV-11 端的就是这种卡（画面左上角写着「CCTV 4K 超高清」「CCTV 11 戏曲」），
     # 按旧口径它会被 FRAME_PLACEHOLDER 一票否决，等于把一条真源判成不能用。
     card = FRAME_PLACEHOLDER.get(canon) or ""
-    verdict = IDENTITY.get(f"{name}|{canon}")
-    if verdict and verdict in IDENTITY_GOOD:
+    if logo_verified(name, url):
         # 这一半只覆盖**频道自己的测试卡**：画面是这台端出来的、此刻没节目而已。
         # 别的占位页（二维码推广页／满屏商品广告）不是这台的内容，"台标相符"和它本来就互斥，
         # 照旧一票否决——夹具第 26 格盯的就是这一半，不许顺手放宽成"有身份结论就放行"。
@@ -1579,6 +1706,52 @@ def load_freeze(path):
     return load_freeze_all([path])[0]
 
 
+def load_review_logos(paths):
+    """读门禁各轮 `review.json` 的人工看图台标结论（后一轮覆盖前一轮）。
+
+    只收 `logo` 那一格：`picture` 是「这一帧算不算节目画面」，与「这条地址是不是这台的真源」两回事。
+    行里没有 channel 的老结论照收，但归属留空——那种情况按地址给任何台名作证据都不成立，
+    所以调用方要拿台名核对（见 logo_keeps_line）。
+    """
+    out = {}
+    for path in paths:
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for row in data.get("reviews", []):
+            canon = stream_rules.canon(row.get("url") or "")
+            if not canon or not (row.get("logo") or row.get("picture")):
+                continue
+            # 台账里台名的字段名是 `name`（门禁自己写的），`channel` 是人工补写那批用的；
+            # 只认其中一个就会把 160 行有台名的结论读成「没写台名」，整片地址被当成歧义不借证。
+            out[canon] = {"logo": row["logo"], "picture": row.get("picture") or "",
+                          "channel": row.get("channel") or row.get("name") or ""}
+    return out
+
+
+# 人工看图里属于「这一帧不是节目」的四类；纯色与卡流不在其中——那两格在门禁侧本来就有单独的列，
+# 口径是「只降分不删线」（一次淡入淡出给出纯黑不能算这条地址坏了），不该被并进占位页那一族。
+CARD_LIKE = ("测试卡", "广告", "占位页", "推广页")
+
+
+def review_cards(rows):
+    """从人工看图台账里挑出「这一帧不是节目」那四类（键＝归一化地址）。"""
+    return {c: r for c, r in rows.items() if (r.get("picture") or "").startswith(CARD_LIKE)}
+
+
+def review_card(name, canon):
+    """人工看图给这条地址的「占位页/广告」意见；没有或归属对不上就返回空串。"""
+    row = REVIEW_PICTURE.get(canon) or {}
+    label = row.get("picture") or ""
+    if not label.startswith(CARD_LIKE):
+        return ""
+    owner = row.get("channel") or ""
+    if owner:
+        return label if owner == name else ""
+    return "" if canon in AMBIGUOUS_LOGO else label
+
+
 def load_identity(path):
     """读抽帧复核结论（"频道名|canonical url" -> 结论），同样后写的算数。"""
     rows = {}
@@ -1686,10 +1859,15 @@ def strict_filter(channels):
       ④特色频道整组删除（用户 10-23 20:0x「删除特色频道」）：category 是 featured 的台
         不管有没有画面实证一律不进目录——影视轮播/NewTV/CHC/少儿那几台是用户点名不要的，
         与「没有可用源」不是一回事，计数单独一格（dropped_featured），不许并进 dropped_no_source。
+      ⑤台级那一格多一条豁免（用户 10-24 #92 点档「认台标」）：②③那两侧「整台没有一条有画面的线
+        ⇒ 删除频道」前面再加一问——这条地址有没有**为本台验过台标**（`logo_keeps_line`）。
+        验过就留着台，单独计数 `logo_only_kept`。只管**台在不在**：`has_picture` / `has_picture_now`
+        一行没动，这种台照样出现在报告的「没有可用画面」名单里（G2/G4 照旧判红），
+        也不会替必看台那一侧说话——①没有放宽。
     """
     stats = {"must_total": len(MUST_PLAY_CHANNELS), "pruned_lines": 0,
              "must_no_picture": [], "dropped_no_source": 0, "dropped_featured": 0,
-             "stale_only": [], "sat_pruned": []}
+             "stale_only": [], "sat_pruned": [], "logo_only_kept": []}
     survivors = []
     for ch in channels:
         if ch["category"] == "featured":
@@ -1722,6 +1900,13 @@ def strict_filter(channels):
                          (HEALTH.get(stream_rules.canon(s)) or {}).get("verdict", ""))
                         for s in dropped)
             survivors.append(ch)
+        elif any(logo_keeps_line(ch["name"], s) for s in ch["streams"]):
+            # 「台级删除也认本台台标」（用户 10-24 #92 点档「认台标」＝上面第 乙 档）：
+            # 整台一条画面实证都没有、但有一条地址为本台验过台标 ⇒ 台留着。
+            # 只放宽这一格：`proven`/`has_picture`/`has_picture_now` 一行没动，
+            # 所以它照样进 G2/G4 的「没有可用画面」名单、报告侧照旧判红——是"台别消失"，不是"台算能用"。
+            stats["logo_only_kept"].append(ch["name"])
+            survivors.append(ch)
         else:
             stats["dropped_no_source"] += 1
     return survivors, stats
@@ -1729,7 +1914,7 @@ def strict_filter(channels):
 
 def build(args):
     global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD, FRAME_RES, FRAME_PLACEHOLDER, FRESH_RES, DEVICE_PROOF
-    global FRAME_STALLED, FROZEN, FROZEN_NO_SIBLING
+    global FRAME_STALLED, FROZEN, FROZEN_NO_SIBLING, REVIEW_LOGO, AMBIGUOUS_LOGO, REVIEW_PICTURE
     MAX_STREAMS = max(0, int(args.max_streams))
     DROP_DEAD = not args.keep_dead
     out_path = Path(args.out) if args.out else OUT
@@ -1745,6 +1930,14 @@ def build(args):
             HEALTH.update(load_health(path))
     identity_path = Path(args.identity)
     IDENTITY = load_identity(identity_path) if identity_path.exists() else {}
+    review_paths = [Path(p) for p in (args.review or [])] or sorted(
+        (CACHE / "gate").glob("round_*/review.json"))
+    REVIEW_LOGO = load_review_logos(review_paths)
+    REVIEW_PICTURE = review_cards(REVIEW_LOGO)
+    print(f"[review] {len(review_paths)} 份人工看图台账、{len(REVIEW_LOGO)} 枚地址有台标结论"
+          f"（其中「台标相符」{sum(1 for v in REVIEW_LOGO.values() if v['logo'].startswith('台标相符'))} 枚）")
+    print(f"[review] 人工判为「这一帧不是节目」（测试卡/广告/占位页/推广页）的地址 {len(REVIEW_PICTURE)} 枚"
+          f"——这一族在构建侧只降分、不摘线（摘线那一侧仍只认钉死的画面指纹）")
     frame_paths = list(dict.fromkeys([DEFAULT_FRAMES] + [Path(p) for p in (args.frames or [])]))
     FRAME_RES, FRAME_PLACEHOLDER, FRAME_STALLED = {}, {}, {}
     for path in frame_paths:
@@ -2392,6 +2585,16 @@ def build(args):
         if backups:
             ch["streams"] = list(dict.fromkeys(list(ch["streams"]) + backups))
 
+    # 台标证据的归属：`review.json` 那一份只按地址记结论（老行没有台名字段），
+    # 所以先按「这条地址挂在几个台名下」算出歧义集，歧义的那批不许借证（见 logo_verified）。
+    owners = {}
+    for ch in channels:
+        for s in ch["streams"]:
+            owners.setdefault(stream_rules.canon(s), set()).add(ch["name"])
+    AMBIGUOUS_LOGO = {c for c, ns in owners.items()
+                      if len(ns) > 1 and not (REVIEW_LOGO.get(c) or {}).get("channel")}
+    print(f"[review] 同一地址挂在 2 个以上台名下、结论又没写台名的：{len(AMBIGUOUS_LOGO)} 枚（这些不借证）")
+
     # 人工前置的那几条不走 final_channels，这里再按同一个判据扫一遍，
     # 免得「实测播不出来的人工备用线」从后门回到目录里。删空的频道整个去掉。
     if DROP_DEAD:
@@ -2427,6 +2630,11 @@ def build(args):
     print(f"[strict] 卫视组删掉本机连不通的线 {len(strict_stats['sat_pruned'])} 条（{len(sat_names)} 台），"
           f"并按地址送进黑名单防设备端更新捞回")
     print(f"[strict] 其余各组无可用源、整台删除 {strict_stats['dropped_no_source']} 台（活下来的台内线路一条没动）")
+    logo_only = sorted(strict_stats['logo_only_kept'])
+    print(f"[strict] 台级「认台标」那一格救回的台 {len(logo_only)} 台"
+          f"（整台没有画面实证、只有本台台标 ⇒ 台留着但报告照旧判红）："
+          + ("、".join(logo_only[:12]) + (f"…另 {len(logo_only) - 12} 台" if len(logo_only) > 12 else "")
+             if logo_only else "无"))
     print(f"[strict] 特色频道整组删除（用户 10-23 20:0x）{strict_stats['dropped_featured']} 台")
     must_no_picture = strict_stats['must_no_picture']
 
@@ -2469,6 +2677,12 @@ def build(args):
         # 与上面 dead_stream_prefixes 里 CCTV-2 那一条同批：目录侧摘掉，设备端自动更新也不许再捞回来。
         stream_rules.canon("http://8.138.7.223/tv/api.php?id=cctv2"):
             "真机现读是「服务器超负载…微信扫码支持」告警页（用户 10-24 11:0x）",
+        # #97「补」：这条线抽到的帧左上角是 KTTV-1（不是新疆卫视），目录里已按「借来的台标」摘掉，
+        # 但这台主机还在公开源里挂着新疆卫视的名字 ⇒ 设备端自动更新会原样捞回来并放行。
+        # 键按台账里那一枚的字面串取（canon 不按分号切），与目录/台账里那条是同一个键。
+        stream_rules.canon("http://218.84.12.186:8001/hls/main/playlist.m3u8"
+                           "?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd"):
+            "画面是别的台（左上角 KTTV-1＋满屏「再见」，用户 10-24 点档 #97「补」）",
         # 蓝田 ali-m-l 整族 13 个地址：白天重扫 13/13 判冻＋画面是电视购物广告卡（见上面
         # lantian_frozen 那段）。目录侧按主机路径摘，这里按地址拉黑，防设备端从公开列表再捞回来。
         **{stream_rules.canon(u): "白天重扫仍判冻，画面是带二维码的电视购物广告卡（用户 10-24 点档 #86 选项B）"
@@ -2514,6 +2728,16 @@ def build(args):
     # 新判据里"必须能正常播放"这一句要落在退出码上：台在目录里、但没有任何一条有画面的线路，
     # 也算不通过——那种台要去公开数据源补线，不能靠构建绿灯混过去。
     print("[check] no_picture:", must_no_picture if must_no_picture else "none")
+    # 两份手写名单要交叉对表：`dead_stream_prefixes` 按台名摘掉的线，后面的 `manual_backups`
+    # 与 `sat_manual_backups` 又是"追加"语义，会把它原样加回来（10-24 现读：CCTV-4K 那条
+    # 8.138.7.223 代理就是这么回到目录里的——摘它的依据是"模拟器两次没起画面"，
+    # 而它在身份台账里是「台标相符」，两条规则在打架，谁赢要用户裁，不许构建替它选）。
+    readded = [(ch["name"], s) for ch in channels for s in ch["streams"]
+               if s.startswith(dead_stream_prefixes.get(ch["name"], ()))]
+    print(f"[check] 按台名摘掉又被备份名单加回来的线: {len(readded)} 条"
+          + ("" if not readded else "（两份名单口径不一，见待办 #94）"))
+    for name, s in readded:
+        print(f"[check]   {name} | {s}")
     if missing or must_no_picture:
         return 1
     return 0
@@ -2557,6 +2781,9 @@ if __name__ == "__main__":
     ap.add_argument("--identity", type=Path,
                     default=CACHE / "linecheck" / "identity_review.jsonl",
                     help="抽帧复核的台标身份结论（jsonl），优先于分片级结论决定线路顺序")
+    ap.add_argument("--review", type=Path, action="append", default=None,
+                    help="门禁各轮出的人工看图台账 review.json（台标结论）；不给就自动收 "
+                         f"{CACHE / 'gate'} 下 round_*/review.json，后一轮覆盖前一轮")
     ap.add_argument("--frames", type=Path, action="append", default=None,
                     help=f"抽帧得到的原生画面尺寸与占位页结论（jsonl），可重复给多份；"
                          f"默认那一份 {DEFAULT_FRAMES} 始终参与，额外给的按线路覆盖它")

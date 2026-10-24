@@ -147,6 +147,45 @@ def card_is_picture(name: str, placeholder: str, url: str, review: dict | None) 
             "——按用户 10-23 02:14 口径算这一台的画面，不当占位页判红")
 
 
+IDENTITY_LEDGER: dict[str, str] | None = None
+
+
+def identity_ledger() -> dict[str, str]:
+    """手抄的身份台账（「台名|地址」→ 结论）只读一次：报告侧与构建侧必须用同一批证据。
+
+    为什么要接进来：G4 以前只判到「抽到帧、且不是已知推广页/测试卡同图」这一层，不问这一帧是谁的台标；
+    于是安多卫视那条线（画面是西宁市台「新闻综合」）一直给它算「有正常画面」。
+    用户 10-24 点档 #96 乙 之后，构建侧已经有这把尺（`build_catalog.no_own_logo`），
+    报告侧不同步就是同一件事两处口径不一 —— 门禁绿了、目录里也留着，等于没查。
+    """
+    global IDENTITY_LEDGER
+    if IDENTITY_LEDGER is None:
+        path = build_catalog.CACHE / "linecheck" / "identity_review.jsonl"
+        IDENTITY_LEDGER = build_catalog.load_identity(path) if path.exists() else {}
+    return IDENTITY_LEDGER
+
+
+def other_station_frame(name: str, url: str, review: dict | None) -> bool:
+    """这一 (台名,地址) 的观察里没有一枚认得出本台台标、且有点名别的台的反证 ⇒ 不算本台画面。
+
+    判定本体在 `build_catalog.logo_contradicts_station`（纯函数，两层共用）；
+    这里只负责按报告侧的数据拼观察：①身份台账那一枚；②本轮 `review.json` 那一枚（归属要对得上本台名）。
+    与构建侧的已知差别：构建侧读**各轮** review（后一轮覆盖前一轮），报告侧只有**本轮**这一份。
+    """
+    canon = build_catalog.stream_rules.canon(url)
+    observations = []
+    ident = identity_ledger().get(f"{name}|{canon}")
+    if ident:
+        observations.append(("台账", ident))
+    row = (review or {}).get(url) or {}
+    logo = (row.get("logo") or "").strip()
+    if logo and logo != PENDING:
+        owner = row.get("channel") or row.get("name") or ""
+        if owner == name or not owner:
+            observations.append(("人工", logo))
+    return build_catalog.logo_contradicts_station(observations)
+
+
 def frame_counts(name: str, line: dict, logo: str, picture: str) -> bool:
     """这一帧算不算「这台能播的画面」——门禁那一层与 card_is_picture 同一把尺。
 
@@ -400,9 +439,14 @@ def probe_channel(channel: dict, health: dict[str, dict], frames_dir: Path,
     # VLC 能解 FLV，ExoPlayer 没有对应的解复用器：这类线在电视上是黑屏。
     # 「至少一条线路显示正常画面」里的"显示"是在父母那台电视上显示，不是在抽帧机上显示。
     demuxable = [line for line in framed if line["verdict"] != PLAYER_UNDEMUXABLE]
+    # 「画面是别人家的节目」不算这一台能播（用户 10-24 #96 乙，与构建侧同一个纯函数）：
+    # 安多卫视那条线抽到的是西宁市台「新闻综合」，以前在这一格里算「有正常画面」。
+    borrowed = [line for line in demuxable
+                if other_station_frame(channel["name"], line.get("url") or "", review)]
     clean = [line for line in demuxable
              if (line.get("placeholder_ok") or not line.get("placeholder"))
-             and not line.get("blank") and not line.get("stalled")]
+             and not line.get("blank") and not line.get("stalled")
+             and line not in borrowed]
     return {
         "id": channel["id"], "name": channel["name"], "subgroup": channel.get("subgroup"),
         "category": channel.get("category"),
@@ -410,6 +454,7 @@ def probe_channel(channel: dict, health: dict[str, dict], frames_dir: Path,
         "lines": lines, "segment_ok": segment_ok, "frame_ok": len(framed),
         "undemuxable": len(framed) - len(demuxable),
         "clean_frame_ok": len(clean),
+        "borrowed_frame": len(borrowed),
         "frame": clean[0] if clean else (framed[0] if framed else None),
         "frame_line": clean[0] if clean else (framed[0] if framed else None),
         "all_lines_framed": bool(lines) and len(framed) == len(lines),
@@ -933,7 +978,10 @@ def main() -> int:
                 if not reviewed:
                     unseen += 1
             elif r["frame_ok"]:
-                no_frame.append(f"{r['name']}（抽到的帧都是已知推广页/测试卡）")
+                if r.get("borrowed_frame"):
+                    no_frame.append(f"{r['name']}（抽到的帧是别的台的画面，台标结论点名别的台）")
+                else:
+                    no_frame.append(f"{r['name']}（抽到的帧都是已知推广页/测试卡）")
             else:
                 no_frame.append(r["name"])
         verdict_text = (f"{len(rest)} 台全部至少一条出帧" if not no_frame

@@ -40,6 +40,11 @@
  41 必看台＋台标相符＋测试卡 ⇒ 只降分不删线（evidence() 那一层也要放行，否则 strict_filter 之前台就空了）
  42 负对照：同一形状把卡换成推广页 ⇒ 档 4、被删（例外只吃「测试卡」）
  43 负对照：非必看台同一形状 ⇒ 档 4、被删（豁免不外溢到六组）
+ 10-24 追加（作废上面 26/42/43 三格的「被删」那一半，「不算画面」那一半照旧）：用户「保留有台标的线路」
+      ⇒ 台标验过的地址抽到广告/占位页只降到档 1、线保留、不进黑名单；has_picture 仍为 False。
+      台级删除同日再宽一格（用户 10-24 #92 点档「认台标」＝乙，作废上一条那句「保留线不等于保留台」）：
+      整台一条画面实证都没有、但有一条地址为本台验过台标 ⇒ 台留着，单独计数 logo_only_kept；
+      has_picture / has_picture_now 一行没动 ⇒ 这种台照样进报告的「没有可用画面」名单。43b 盯这一格的反面。
  44 卫视组删线（用户 10-23 17:5x「不可用线路删除」）：台内「连接超时」线删掉、实证线留下、进 sat_pruned 名单
  44b 负对照：同形状非卫视组，台内线路一条不动（这台只删卫视组的线，不外溢）
  45 「响应超时」同一把尺删
@@ -51,6 +56,11 @@
  49 甲（用户 10-23 20:5x 点档）：首分片 >10 秒的慢线挪到台内最后、其余保序
  49b 负对照：设备播过的慢线原地不动（「已播过不挪位」盖过甲）
  49c 负对照：已排在末位的慢线不记进挪线名单（名单只记真要动的那批）
+ 50 两份手写名单交叉对表（10-24 现读抓出）：`dead_stream_prefixes` 按台名摘掉的线不许被
+     `manual_backups`/`sat_manual_backups` 追加回来；现读登记着**一枚已知冲突**（CCTV-4K 那条
+     8.138.7.223 代理，待办 #94 等点档），多一枚少一枚都判红
+ 50b 正对照：往资产里塞一枚"已按台名摘掉"的线，这一格要抓得到（证明它看得见差异、不是恒红）
+ 50c 负对照：把登记那一枚整台摘掉，冲突数归零（证明咬的是那一枚线，不是判据写死）
 跑法：python3 tools/tests/test_availability_count.py    （退出码 0 才算过）
 """
 from __future__ import annotations
@@ -432,8 +442,8 @@ def reset_conflict(with_placeholder: bool):
 reset_conflict(True)
 tier_conflict = bc.evidence(U12, "测试台")[0]
 pic_conflict = bc.has_picture("测试台", U12)
-check("26 占位页走在身份判定前面：复核过台标 + 抽到推广页 ⇒ 档 4、不算画面、会被删",
-      tier_conflict == bc.BAD_TIER and not pic_conflict and not bc.usable("测试台", U12),
+check("26 台标相符 + 抽到推广页 ⇒ 档 1、不算画面、但线保留（用户 10-24「保留有台标的线路」把 10-22「占位页赢」限定在记分那一侧）",
+      tier_conflict == 1 and not pic_conflict and bc.usable("测试台", U12),
       f"档={tier_conflict} has_picture={pic_conflict} usable={bc.usable('测试台', U12)}")
 reset_conflict(False)
 tier_clean = bc.evidence(U12, "测试台")[0]
@@ -593,18 +603,54 @@ check("41 必看台＋台标相符＋测试卡：只降分不删线（档 1、us
       f"档位={tier_card[0]}（BAD_TIER={bc.BAD_TIER}）usable={bc.usable('CCTV-11 戏曲', U13)}")
 bc.FRAME_PLACEHOLDER = {canon(U13): "占位页：带二维码的下载 App 推广页"}
 tier_ad = bc.evidence(U13, "CCTV-11 戏曲")
-check("42 负对照：同一台同一地址，卡换成推广页 ⇒ 回到档 4、被删（例外只吃「测试卡」那一类，没顺手放宽）",
-      tier_ad[0] == bc.BAD_TIER and not bc.usable("CCTV-11 戏曲", U13)
+check("42 台标相符＋推广页：线保留（档 1）但这一帧不算画面——记分那一侧没跟着放宽（用户 10-24「保留有台标的线路」）",
+      tier_ad[0] == 1 and bc.usable("CCTV-11 戏曲", U13)
       and not bc.has_picture("CCTV-11 戏曲", U13),
       f"档位={tier_ad[0]} usable={bc.usable('CCTV-11 戏曲', U13)}")
 bc.FRAME_PLACEHOLDER = {canon(U13): "占位页：CCTV 测试卡（色条卡家族）"}
 bc.IDENTITY = {f"湖南卫视|{canon(U13)}": "台标相符"}
 tier_other = bc.evidence(U13, "湖南卫视")
 surv10, st10 = run_strict([mk("湖南卫视", "satellite", "卫视", [U13])])
-check("43 负对照：这条豁免不外溢到六组——非必看台带着台标相符＋测试卡照样档 4、被删（用户那句只点了 4K/8K 那一类画面）",
-      tier_other[0] == bc.BAD_TIER and not bc.usable("湖南卫视", U13)
-      and st10["dropped_no_source"] == 1,
-      f"档位={tier_other[0]} 删除={st10['dropped_no_source']}")
+check("43 非必看台同一形状（用户 10-24 #92「认台标」＝乙）：线保留＋台也保留，但记分那一侧照旧不算画面",
+      tier_other[0] == 1 and bc.usable("湖南卫视", U13)
+      and st10["dropped_no_source"] == 0 and st10["logo_only_kept"] == ["湖南卫视"]
+      and [c["streams"] for c in surv10] == [[U13]]
+      and not bc.has_picture("湖南卫视", U13),
+      f"档位={tier_other[0]} 剩台={[c['name'] for c in surv10]} 删除={st10['dropped_no_source']}"
+      f" 台级认台标={st10['logo_only_kept']} has_picture={bc.has_picture('湖南卫视', U13)}")
+bc.IDENTITY = {f"湖南卫视|{canon(U13)}": "画面是别的台（左上「CCTV 13 新闻」）"}
+surv10b, st10b = run_strict([mk("湖南卫视", "satellite", "卫视", [U13])])
+check("43b 负对照：同一形状把「台标相符」换成「画面是别的台」⇒ 台级那一格不救、整台照旧删除",
+      st10b["dropped_no_source"] == 1 and st10b["logo_only_kept"] == [] and surv10b == [],
+      f"剩台={[c['name'] for c in surv10b]} 删除={st10b['dropped_no_source']}"
+      f" 台级认台标={st10b['logo_only_kept']}")
+# 43c 用户 10-24 点档 #96＝乙 那一格的形状：这条线**抽到过真画面**、机器也没标占位页，
+# 但本台名下没有一枚帧认得出本台台标（台账与人工都点名别的台）⇒ 画面分不给，整台按无源删除。
+# 安多卫视就是这么被收掉的：它唯一那条线抽到 11 枚帧、9 枚看过全是西宁市台，旧口径它一直占着画面分。
+_keep_logo, _keep_pic, _keep_res = bc.REVIEW_LOGO, bc.REVIEW_PICTURE, bc.FRAME_RES
+bc.FRAME_PLACEHOLDER = {}
+bc.FRAME_RES = {**_keep_res, canon(U13): [1920, 1080]}
+bc.IDENTITY = {f"湖南卫视|{canon(U13)}": "画面是别的台（左上「CCTV 13 新闻」）"}
+bc.REVIEW_LOGO = {canon(U13): {"logo": "台标是别的台（画面写着「CCTV 13 新闻」）",
+                               "picture": "正常节目画面", "channel": "湖南卫视"}}
+bc.REVIEW_PICTURE = {}
+surv10c, st10c = run_strict([mk("湖南卫视", "satellite", "卫视", [U13])])
+check("43c 抽到真画面但没有一枚是本台台标（#96 乙）：新尺抓到、画面分不给、整台按无源删除",
+      bc.no_own_logo("湖南卫视", U13) and not bc.has_picture("湖南卫视", U13)
+      and not bc.has_picture_now("湖南卫视", U13)
+      and st10c["dropped_no_source"] == 1 and st10c["logo_only_kept"] == [] and surv10c == [],
+      f"新尺={bc.no_own_logo('湖南卫视', U13)} has_picture={bc.has_picture('湖南卫视', U13)}"
+      f" 剩台={[c['name'] for c in surv10c]} 删除={st10c['dropped_no_source']}")
+# 43d 负对照：同一形状只把台账那一枚换回「台标相符」（漂移：时而本台时而别家）⇒ 不许切
+bc.IDENTITY = {f"湖南卫视|{canon(U13)}": "台标相符"}
+surv10d, st10d = run_strict([mk("湖南卫视", "satellite", "卫视", [U13])])
+check("43d 负对照：有一枚「台标相符」时新尺不生效（延边卫视/CCTV-7/CCTV-8 那三条漂移线照旧留）",
+      not bc.no_own_logo("湖南卫视", U13) and bc.has_picture("湖南卫视", U13)
+      and st10d["dropped_no_source"] == 0 and len(surv10d) == 1,
+      f"新尺={bc.no_own_logo('湖南卫视', U13)} 剩台={[c['name'] for c in surv10d]}"
+      f" 删除={st10d['dropped_no_source']}")
+bc.REVIEW_LOGO, bc.REVIEW_PICTURE, bc.FRAME_RES = _keep_logo, _keep_pic, _keep_res
+bc.IDENTITY = {}
 
 # ── 44~46b 卫视组删线（用户 10-23 17:5x「很多频道有多个不可用线路，已验证过的可用线路保留，不可用线路删除」）
 # 只删台内档 3 的线（本机连不通）；档 0/1 留下；设备播过的那条永远不许删；删空了不许把台删没。
@@ -687,6 +733,37 @@ check("49c 负对照：已排在末位的慢线不记进挪线名单（名单只
       f"现序={chans49c[0]['streams']} 挪={moved49c}")
 bc.DROP_DEAD = False
 bc.HEALTH, bc.IDENTITY, bc.FRAME_PLACEHOLDER, bc.FRAME_RES, bc.FRESH_RES, bc.DEVICE_PROOF = {}, {}, {}, {}, {}, {}
+
+# ── 50~50b 两份手写名单要交叉对表（10-24 现读抓出来的一枚真冲突）
+# `dead_stream_prefixes` 按台名摘掉的线，后面的 `manual_backups` 是「追加」语义，会把它原样加回来：
+# CCTV-4K 那条 8.138.7.223 代理（摘它的依据＝模拟器两次没起画面）此刻就在在库资产里，
+# 而它在身份台账里写着「台标相符」⇒ 两条规则谁赢要用户裁（待办 #94），构建不许替它选。
+# 这一格把「已登记的那一枚」钉成基线：多一枚冲突就红（正对照 50b 造一枚假的证明它看得见），
+# 少一枚也红（用户按字面改回后要先来更新基线，别让它悄悄失效）。
+import re as _re  # noqa: E402
+_src = (BASE / "tools" / "build_catalog.py").read_text(encoding="utf-8")
+_dead_block = _re.search(r"dead_stream_prefixes = \{(.*?)\n    \}", _src, _re.S).group(1)
+DEAD_PREFIXES = {name: tuple(_re.findall(r'"([^"]+)"', body))
+                 for name, body in _re.findall(r'"([^"]+)": \(([^)]*)\)', _dead_block, _re.S)}
+
+def line_conflicts(channels, dead=DEAD_PREFIXES):
+    return sorted({(c["name"], u) for c in channels for u in c["streams"]
+                   if u.startswith(dead.get(c["name"], ()))})
+
+_shipped = json.loads((BASE / "app/src/main/assets/channels.json").read_text(encoding="utf-8"))["channels"]
+KNOWN_CONFLICT = [("CCTV-4K 超高清", "http://8.138.7.223/tv/cctvnews.php?id=cctv4k")]
+found = line_conflicts(_shipped)
+check("50 名单交叉对表：按台名摘掉又被备份名单加回来的线，只准有登记过的那一枚（#94）",
+      found == KNOWN_CONFLICT and len(DEAD_PREFIXES) >= 8,
+      f"现读冲突={found}｜dead_stream_prefixes 覆盖台名 {len(DEAD_PREFIXES)} 个")
+fake = _shipped + [{"name": "西藏卫视",
+                    "streams": ["http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0"]}]
+check("50b 正对照：塞一枚「已被按台名摘掉」的线进去，这一格必须抓到（证明它看得见，不是恒红）",
+      line_conflicts(fake) == sorted(KNOWN_CONFLICT + [("西藏卫视", fake[-1]["streams"][0])]),
+      f"塞进去后={line_conflicts(fake)}")
+check("50c 负对照：把登记那一枚从资产里去掉，冲突数归零（证明咬的是那一枚线，不是判据写死）",
+      line_conflicts([c for c in _shipped if c["name"] != "CCTV-4K 超高清"]) == [],
+      f"摘掉 CCTV-4K 那台后={line_conflicts([c for c in _shipped if c['name'] != 'CCTV-4K 超高清'])}")
 
 print()
 if failures:

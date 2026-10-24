@@ -155,6 +155,14 @@ object RelabeledStreams {
     private val targets: List<Pair<String, String>> = listOf(
         // 10-21 21:31 与 22:31 两次抽帧，画面左上角都是「四川卫视」台标。
         "http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0" to "四川卫视",
+        // 10-24 16:5x「同一枚帧被两个台名认领」全量扫出来的三对（用户点档 #96 乙 之后从目录里删了错的那台，
+        // 这里补上改挂表：公开源下次把它们带回来时，错的台名摘掉、对的台名接住）。
+        // ① 该址 11 枚唯一帧看过 9 枚＋16:44 复抽 3 枚全是西宁市台（XNTV 色卡／「新闻综合」旋标／《夏都零距离》）。
+        "https://liveout.xntv.tv/a65jur/96iln2.m3u8" to "西宁新闻综合",
+        // ② 该址 4 枚帧是井研的橙色火焰「新闻综合」标（域名 jyrmt.cn＝井研融媒体中心）。
+        "http://tvfile.jyrmt.cn/nmip-media/channellive/channel104452/playlist.m3u8" to "井研综合",
+        // ③ 该址唯一一枚帧左上角写「营山」（19 处登记 md5 全同＝一次观测）；`#` 后那半截是列表粘串，canonical 会剥掉。
+        "http://file.ysxtv.cn/cms/videos/nmip-media/channellive/channel4/playlist.m3u8?zsicd" to "营山电视台",
     )
 
     private fun keyOf(url: String) = StreamUrl.canonical(url)

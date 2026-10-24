@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "generatedAt": "2026-10-24T04:04:29Z",
+ "generatedAt": "2026-10-24T09:53:18Z",
  "sourceNote": "频道与线路来自互联网公开 IPTV 列表，仅用于学习与个人测试；线路可能随时失效，应用会自动尝试备用线路。",
  "blockedLines": {
   "http://1.94.31.214/php/hntv.php?id=hnws": "非常规响应",
@@ -99,6 +99,7 @@
   "http://218.10.43.24:81/live/bdac590a43b11a837c716a5ad606e95f/high/live.m3u8": "连不上",
   "http://218.13.170.98:9901/tsfile/live/0141_1.m3u8": "响应超时",
   "http://218.201.85.71:3170/m3u8": "清单404",
+  "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd": "画面是别的台（左上角 KTTV-1＋满屏「再见」，用户 10-24 点档 #97「补」）",
   "http://218.84.12.186:8002/hls/main/playlist.m3u8": "清单无分片",
   "http://218.84.12.186:8002/hls/main/playlist.m3u8?zxinjd": "清单无分片",
   "http://221.238.209.44:81/hls/live1.m3u8": "清单404",
@@ -155,7 +156,6 @@
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225705/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225719/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225723/index.m3u8": "连接超时",
-  "http://39.135.138.58:18890/PLTV/88888888/224/3221225725/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225726/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225727/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225730/index.m3u8": "连接超时",
@@ -172,7 +172,6 @@
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225744/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225745/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221225746/index.m3u8": "连接超时",
-  "http://39.135.138.58:18890/PLTV/88888888/224/3221226195/index.m3u8": "连接超时",
   "http://39.135.138.58:18890/PLTV/88888888/224/3221226201/index.m3u8": "连接超时",
   "http://3gvod.zjgonline.com.cn:1935/live/shehuishenghuo2/playlist.m3u8": "变体清单报错",
   "http://3gvod.zjgonline.com.cn:1935/live/xinwenzonghe2/playlist.m3u8": "变体清单报错",
@@ -273,7 +272,6 @@
   "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001035/index.m3u8": "连接超时",
   "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001036/index.m3u8": "连接超时",
   "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001037/index.m3u8": "连接超时",
-  "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001065/index.m3u8": "连接超时",
   "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001067/index.m3u8": "连接超时",
   "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001068/index.m3u8": "连接超时",
   "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001070/index.m3u8": "连接超时",
@@ -334,6 +332,7 @@
   "http://bktvplay.gdnewmedia.cc/live/bk_whly.m3u8": "连不上",
   "http://bktvplay.gdnewmedia.cc/live/bk_xwzh.m3u8": "连不上",
   "http://bp-livetytv.bestv.cn/ch/bestvdspd.m3u8": "连不上",
+  "http://bp-livetytv.bestv.cn/ch/bestvdycj.m3u8": "连不上",
   "http://bp-livetytv.bestv.cn/ch/bestvwxty.m3u8": "连不上",
   "http://bp-livetytv.bestv.cn/ch/bestvxwzh.m3u8": "连不上",
   "http://bztv.tvbus.cc:8081/cdnlive/cctv10.m3u8": "连不上",
@@ -617,9 +616,7 @@
   "http://l.cztvcloud.com/channels/lantian/SXcangnan1/720p.m3u8": "占位页",
   "http://l.cztvcloud.com/channels/lantian/SXlongyou2/720p.m3u8": "占位页",
   "http://l.cztvcloud.com/channels/lantian/SXpinghu2/720p.m3u8": "占位页",
-  "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8": "占位页",
   "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8?zzhed": "占位页",
-  "http://l.cztvcloud.com/channels/lantian/SXshangyu3/720p.m3u8": "占位页",
   "http://l.cztvcloud.com/channels/lantian/SXshengsi1/720p.m3u8": "占位页",
   "http://l.cztvcloud.com/channels/lantian/SXsuichang1/720p.m3u8": "占位页",
   "http://l.cztvcloud.com/channels/lantian/SXsuichang1/720p.m3u8?zzhed": "占位页",
@@ -940,7 +937,6 @@
   "http://suining-tv-hls.cm.jstv.com/suining-tv/suiningzh.m3u8": "服务端错误",
   "http://t.061899.xyz/tl/tl.php?id=hnws": "连不上",
   "http://test5.btzx.com.cn/live/disanshi.stream/playlist.m3u8": "清单404",
-  "http://test5.btzx.com.cn/live/kkdl.stream/playlist.m3u8": "占位页",
   "http://traffic.jbh.tjbh.com/live/bhtv1/playlist.m3u8": "清单404",
   "http://traffic.jbh.tjbh.com/live/bhtv2/playlist.m3u8": "清单404",
   "http://traffic.jbh.tjbh.com/live/bhtv3/playlist.m3u8": "清单404",
@@ -1180,9 +1176,6 @@
   "https://jwcdnqx.hebyun.com.cn/live/cdsggshtv/1500k/tzwj_video.m3u8": "清单404",
   "https://jwcdnqx.hebyun.com.cn/live/cdslywh/1500k/tzwj_video.m3u8": "清单404",
   "https://jwcdnqx.hebyun.com.cn/live/cdsxwzhtv/1500k/tzwj_video.m3u8": "清单404",
-  "https://jwcdnqx.hebyun.com.cn/live/hdgg/1500k/tzwj_video.m3u8": "占位页",
-  "https://jwcdnqx.hebyun.com.cn/live/hdkj/1500k/tzwj_video.m3u8": "占位页",
-  "https://jwcdnqx.hebyun.com.cn/live/hdxwzh/1500k/tzwj_video.m3u8": "占位页",
   "https://jwcdnqx.hebyun.com.cn/live/lsdst/1500k/tzwj_video.m3u8": "清单404",
   "https://jwcdnqx.hebyun.com.cn/live/luquaner/1500k/tzwj_video.m3u8": "清单404",
   "https://jwcdnqx.hebyun.com.cn/live/luquanyi/1500k/tzwj_video.m3u8": "清单404",
@@ -1434,7 +1427,6 @@
     "辽宁",
     "吉林",
     "黑龙江",
-    "上海",
     "江苏",
     "浙江",
     "安徽",
@@ -1783,9 +1775,9 @@
    "subgroup": "央视",
    "logo": "https://tb.zbds.top/logo/CGTN.png",
    "streams": [
+    "https://0472.org/hls/cgtn.m3u8",
     "https://amg00405-rakutentv-cgtn-rakuten-i9tar.amagi.tv/master.m3u8",
     "https://fastlive.cctvplus.com/out/v1/2b3d8a0c805d437f9dc85b764c2ac599/index.m3u8",
-    "https://0472.org/hls/cgtn.m3u8",
     "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001058/index.m3u8",
     "http://39.135.138.58:18890/PLTV/88888888/224/3221225747/index.m3u8"
    ]
@@ -1819,8 +1811,8 @@
    "subgroup": "央视",
    "logo": "https://tb.zbds.top/logo/CGTN阿语.png",
    "streams": [
-    "https://0472.org/hls/cgtna.m3u8",
-    "https://dash3.antik.sk/live/test_cgtn_arb_tizen/playlist.m3u8"
+    "https://dash3.antik.sk/live/test_cgtn_arb_tizen/playlist.m3u8",
+    "https://0472.org/hls/cgtna.m3u8"
    ]
   },
   {
@@ -2172,16 +2164,6 @@
    ]
   },
   {
-   "id": "cctv-1f54967f34",
-   "name": "安多卫视",
-   "category": "cctv",
-   "subgroup": "卫视",
-   "logo": "https://tb.zbds.top/logo/安多卫视.png",
-   "streams": [
-    "https://liveout.xntv.tv/a65jur/96iln2.m3u8"
-   ]
-  },
-  {
    "id": "cctv-1ffa84b5c3",
    "name": "宁夏卫视",
    "category": "cctv",
@@ -2190,16 +2172,6 @@
    "streams": [
     "http://107.150.60.122/live/nxws.m3u8",
     "http://198.204.228.26/live/nxws.m3u8"
-   ]
-  },
-  {
-   "id": "cctv-4ebda1fb5d",
-   "name": "新疆卫视",
-   "category": "cctv",
-   "subgroup": "卫视",
-   "logo": "https://live.fanmingming.com/tv/新疆卫视.png",
-   "streams": [
-    "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd"
    ]
   },
   {
@@ -2398,6 +2370,16 @@
    ]
   },
   {
+   "id": "local-60c87871e9",
+   "name": "邯郸公共频道",
+   "category": "local",
+   "subgroup": "河北",
+   "logo": "https://tb.zbds.top/logo/邯郸公共频道.png",
+   "streams": [
+    "https://jwcdnqx.hebyun.com.cn/live/hdgg/1500k/tzwj_video.m3u8"
+   ]
+  },
+  {
    "id": "local-c6dd3042c4",
    "name": "邢台生活",
    "category": "local",
@@ -2415,6 +2397,26 @@
    "logo": "https://tb.zbds.top/logo/滦平新闻.png",
    "streams": [
     "http://jwplay.hebyun.com.cn/live/LPTV001/1500k/tzwj_video.m3u8"
+   ]
+  },
+  {
+   "id": "local-d952664306",
+   "name": "邯郸新闻",
+   "category": "local",
+   "subgroup": "河北",
+   "logo": "https://tb.zbds.top/logo/邯郸新闻.png",
+   "streams": [
+    "https://jwcdnqx.hebyun.com.cn/live/hdxwzh/1500k/tzwj_video.m3u8"
+   ]
+  },
+  {
+   "id": "local-643684f79b",
+   "name": "邯郸科技教育",
+   "category": "local",
+   "subgroup": "河北",
+   "logo": "https://tb.zbds.top/logo/邯郸科技教育.png",
+   "streams": [
+    "https://jwcdnqx.hebyun.com.cn/live/hdkj/1500k/tzwj_video.m3u8"
    ]
   },
   {
@@ -2845,16 +2847,6 @@
    ]
   },
   {
-   "id": "local-fb3b2d1dac",
-   "name": "上海第一财经",
-   "category": "local",
-   "subgroup": "上海",
-   "logo": "https://tb.zbds.top/logo/上海第一财经.png",
-   "streams": [
-    "http://bp-livetytv.bestv.cn/ch/bestvdycj.m3u8"
-   ]
-  },
-  {
    "id": "local-1993c3d29c",
    "name": "南京新闻综合",
    "category": "local",
@@ -3038,6 +3030,16 @@
    ]
   },
   {
+   "id": "local-bfcd59564f",
+   "name": "上虞新闻综合",
+   "category": "local",
+   "subgroup": "浙江",
+   "logo": "https://tb.zbds.top/logo/上虞新闻综合.png",
+   "streams": [
+    "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8"
+   ]
+  },
+  {
    "id": "local-272eed7810",
    "name": "余姚新闻综合",
    "category": "local",
@@ -3170,16 +3172,6 @@
    "logo": "https://tb.zbds.top/logo/龙泉新闻综合.png",
    "streams": [
     "http://l.cztvcloud.com/channels/lantian/SXlongquan1/720p.m3u8"
-   ]
-  },
-  {
-   "id": "local-06e66ab404",
-   "name": "嘉兴新闻综合",
-   "category": "local",
-   "subgroup": "浙江",
-   "logo": "https://tb.zbds.top/logo/嘉兴新闻综合.png",
-   "streams": [
-    "http://tvfile.jyrmt.cn:80/nmip-media/channellive/channel104452/playlist.m3u8"
    ]
   },
   {
@@ -3390,6 +3382,16 @@
    "logo": "https://tb.zbds.top/logo/萧山生活.png",
    "streams": [
     "https://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8"
+   ]
+  },
+  {
+   "id": "local-8f31ec47ad",
+   "name": "上虞新商都",
+   "category": "local",
+   "subgroup": "浙江",
+   "logo": "https://tb.zbds.top/logo/上虞新商都.png",
+   "streams": [
+    "http://l.cztvcloud.com/channels/lantian/SXshangyu3/720p.m3u8"
    ]
   },
   {
@@ -3985,16 +3987,6 @@
    ]
   },
   {
-   "id": "local-eb8f5a837e",
-   "name": "沐川综合",
-   "category": "local",
-   "subgroup": "四川",
-   "logo": "https://tb.zbds.top/logo/沐川综合.png",
-   "streams": [
-    "http://file.ysxtv.cn/cms/videos/nmip-media/channellive/channel4/playlist.m3u8?zsicd"
-   ]
-  },
-  {
    "id": "local-37b0d241fa",
    "name": "荥经综合",
    "category": "local",
@@ -4255,6 +4247,16 @@
    "logo": "",
    "streams": [
     "http://218.84.12.186:8001/hls/main/playlist.m3u8"
+   ]
+  },
+  {
+   "id": "local-4e9badb896",
+   "name": "可克达拉综合",
+   "category": "local",
+   "subgroup": "新疆",
+   "logo": "",
+   "streams": [
+    "http://test5.btzx.com.cn:80/live/kkdl.stream/playlist.m3u8"
    ]
   },
   {
