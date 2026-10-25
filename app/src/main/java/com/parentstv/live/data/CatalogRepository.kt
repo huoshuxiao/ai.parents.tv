@@ -12,9 +12,12 @@ class CatalogRepository(private val context: Context) {
         isLenient = true
     }
     private val cacheFile = File(context.filesDir, "channels_live.json")
+    private val manualLines = ManualLineStore(context)
 
     suspend fun load(): ChannelCatalog = withContext(Dispatchers.IO) {
-        decode(readCache() ?: readAssets())
+        // 手动挂的临时线只在这一层并进去，不写回缓存：写回的话下一次自动更新会把它当成
+        // 目录自带的一条线，过期删掉之后又被旧缓存带回来。
+        manualLines.merged(decode(readCache() ?: readAssets()))
     }
 
     suspend fun loadAssets(): ChannelCatalog = withContext(Dispatchers.IO) {

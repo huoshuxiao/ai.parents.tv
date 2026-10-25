@@ -30,19 +30,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.WifiOff
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -88,6 +83,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import android.os.SystemClock
@@ -102,6 +98,7 @@ import com.parentstv.live.data.DirectionKeyAction
 import com.parentstv.live.data.EpgProgram
 import com.parentstv.live.data.EpgRepository
 import com.parentstv.live.data.EpgSnapshot
+import com.parentstv.live.data.FaultPolicy
 import com.parentstv.live.data.LineRecovery
 import com.parentstv.live.data.MenuKeyAction
 import com.parentstv.live.data.StreamProbe
@@ -122,10 +119,12 @@ fun PlayerScreen(
     initialQueue: List<TvChannel>,
     numberedChannels: List<TvChannel>,
     onNumberedJump: (TvChannel) -> Unit,
-    categoryName: String,
+    categoryNameOf: (String) -> String,
+    // 目录里构建时实测到的画面尺寸（规范地址 -> "宽x高"），选线面板按地址查它给每条线标清晰度
+    //（用户 10-25 指令 5「线路选择画面没看到每条线路的清晰度」；实现在 ChannelCatalog.qualityOf）。
+    lineQualityOf: (String) -> String?,
     favorites: Set<String>,
     prefs: TvPrefs,
-    onToggleFavorite: (TvChannel) -> Unit,
     onChannelChanged: (TvChannel) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -160,6 +159,9 @@ fun PlayerScreen(
     var retryNonce by remember(channel.id) { mutableIntStateOf(0) }
     var reconnectsOnLine by remember(channel.id) { mutableIntStateOf(0) }
     var lastRecoveryAt by remember(channel.id) { mutableLongStateOf(0L) }
+    // 这一条线路这一次「尝试」是从哪一刻起算的：首帧之前要等满设置的那一档时长
+    //（用户 10-25 指令 4/5 ＋ 点档「可重试那一类等满」）。换台、换线、原地重连都会重新起表。
+    val windowStartedAt = remember(channel.id, streamIndex, retryNonce) { SystemClock.elapsedRealtime() }
     // 本台里已经真出过画面的线路号。换线只允许发生在没出过画面的线路上（见 LineRecovery）。
     val playedLines = remember(channel.id) { mutableSetOf<Int>() }
     var errorMessage by remember(channel.id) { mutableStateOf<String?>(null) }
@@ -210,9 +212,8 @@ fun PlayerScreen(
     var guideVisible by remember { mutableStateOf(false) }
     var epgSnapshot by remember { mutableStateOf(EpgSnapshot()) }
     var minuteTick by remember { mutableIntStateOf(0) }
-    val onAirProgram = remember(epgSnapshot, channel.name, minuteTick) {
-        epgSnapshot.onAir(channel.name)
-    }
+    // 画面左上角那句「正在播什么」按用户 10-25 指令 2 去掉了，节目单本身留着：
+    // 这一份 programsFor 喂的是控制栏「节目单」按钮打开的那张表。
     val upcomingPrograms = remember(epgSnapshot, channel.name, minuteTick) {
         epgSnapshot.programsFor(channel.name)
     }
@@ -227,7 +228,6 @@ fun PlayerScreen(
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
         )
     }
-    val aspectLabels = listOf("适应", "铺满", "缩放")
 
     // 数据源超时必须落在「换线等待」以内。原来是 connect 12 秒 / read 18 秒，而看门狗
     // 默认 10 秒就判失败：一条慢线的 connect 还没走完就被 stop() 掐断在途连接，
@@ -252,16 +252,33 @@ fun PlayerScreen(
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 20_000,
-                /* maxBufferMs = */ 40_000,
+                // 上限放到 60 秒（用户 10-24 18:3x「缓冲中/正在连接」）：断流那一下要靠已缓冲的
+                // 内容撑过去，40 秒在 1080p 上只剩 40 秒余量、抖两下就见底；60 秒约 45 MB，电视盒扛得住。
+                /* maxBufferMs = */ 60_000,
                 /* bufferForPlaybackMs = */ 1_200,
                 /* bufferForPlaybackAfterRebufferMs = */ 2_500,
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
     }
+    // 清晰度不许自己往下掉（用户 10-24 18:3x「全高清线路看着看着就变成高清线路了」）。
+    // 默认的 DefaultTrackSelector 会按带宽在多码率清单里自适应选档：网一抖，同一台同一线路
+    // 就从 1080p 落到 720p，右上角那行字跟着从「全高清」变「高清」——看起来像识别错了，
+    // 其实是**同一条线上的码率降档**（目录侧实测：央视·卫视 215 条线里只有 4 条是多档清单
+    // ＝CCTV-9、CGTN、CGTN 纪录，其余 211 条是直接给分片的单档流）。
+    // 钉死「解码器支持的最高档」：宁可多缓冲，也不偷偷降清晰度。
+    val trackSelector = remember(context) {
+        DefaultTrackSelector(
+            context,
+            DefaultTrackSelector.Parameters.Builder()
+                .setForceHighestSupportedBitrate(true)
+                .build(),
+        )
+    }
     val exoPlayer = remember {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
             .build()
             .apply {
@@ -376,6 +393,21 @@ fun PlayerScreen(
         }
     }
 
+    // 预加载（用户 10-24 18:3x「缓冲中/正在连接」）：播稳 5 秒后把**下一个台**的第一条线
+    // 先走一遍（清单＋变体＋首片 64 KB），DNS/TCP/TLS 与分片路径热着 ⇒ 上下键换过去少一次冷启动。
+    // 每个台只做一次、失败不重试、不改任何判据；不碰当前正在播那条的带宽之外的东西。
+    val prefetchedChannels = remember { mutableSetOf<String>() }
+    LaunchedEffect(channel.id, isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+        delay(5_000)
+        if (!isPlaying) return@LaunchedEffect
+        val next = queue.getOrNull((index + 1) % queue.size) ?: return@LaunchedEffect
+        if (next.id == channel.id || !prefetchedChannels.add(next.id)) return@LaunchedEffect
+        val url = next.streams.firstOrNull() ?: return@LaunchedEffect
+        android.util.Log.i("Prefetch", "warm next channel=${next.id} line=1")
+        StreamProbe.prefetch(url)
+    }
+
     LaunchedEffect(linePickerVisible, channel.id, probeNonce) {
         if (!linePickerVisible) return@LaunchedEffect
         lineProbes.clear()
@@ -465,12 +497,49 @@ fun PlayerScreen(
                 if (exoPlayer.isPlaying) playingMs += 1_000
             }
             if (playingMs >= RECONNECT_AFTER_STABLE_MS) reconnectsOnLine = 0
-            // 起播阶段按设置里配的等待时间算失败（默认 10 秒）；已经出过画面后卡住的时间沿用同一档。
+            // 等多久算这条线失败：一律按设置里配的「线路时长」这一档算（默认 10 秒，
+            // 档位见 LINE_SECONDS_OPTIONS），起播阶段和已经出过画面之后卡住都用同一档。
+            // 这里以前对「本台一条线都还没出过画面」的首条线另压了一档 4 秒（上一轮为了躲
+            // 「正在连接十几秒」加的），于是屏幕上等的时长跟设置里配的数对不上——
+            // 用户 10-25 指令第 4 条要的就是「按设置里配的时长来等画面」，短档连同那常量一起删掉。
             val limit = prefs.lineSwitchSeconds * 1_000L
-            if (stalledMs >= limit) {
+            // 首帧之前按「这一次尝试起算的整档时长」到点（用户 10-25 指令 5：要按设置里配的数等满）；
+            // 已经出过画面之后才卡住的，仍按连续卡顿时长算，否则播到第 10 秒就会误判成失败。
+            val overWindow = if (streamIndex in playedLines) {
+                stalledMs >= limit
+            } else {
+                waiting && SystemClock.elapsedRealtime() - windowStartedAt >= limit
+            }
+            if (overWindow) {
                 tryNextLine("线路长时间无响应，请检查网络后重试")
                 break
             }
+        }
+    }
+
+    // 台号行与画面同刻翻页（用户 10-25 点档「甲」）：新台的第一帧真上屏之前，左上角这两行
+    // 仍写上一台——否则会出现「台号 13 · 央视·卫视」压着 CCTV-1 那一帧（10-25 实拍）。
+    var shownName by remember { mutableStateOf(channel.name) }
+    var shownMeta by remember { mutableStateOf(captionMeta(channelNumber, categoryNameOf(channel.category), channel.subgroup)) }
+
+    // 还没出画面这段等待期：把原来那个「转圈 + 缓冲中」换成按设置时长逐秒递减的倒计时
+    //（用户 10-25 指令 3「线路或频道切换时，将 loading 改为设置的时长的倒计时」）。
+    // 触发条件与原来那个居中圈完全一样，起点就是上面 watchdog 用的同一把尺（lineSeconds），
+    // 数到 1 大概就是该换下一条线的时候——圈不再显示，屏幕上只剩这一句大白话。
+    val waitingForPicture = errorMessage == null && isBuffering && !isPlaying
+    var countdownSeconds by remember(channel.id, streamIndex) { mutableIntStateOf(lineSeconds) }
+    LaunchedEffect(waitingForPicture, channel.id, streamIndex, retryNonce, lineSeconds) {
+        if (!waitingForPicture) {
+            // 画面出来了（或报错卡住了）：倒计时归位到设置时长，下一次切换从头数。
+            countdownSeconds = lineSeconds
+            return@LaunchedEffect
+        }
+        var left = lineSeconds.coerceAtLeast(1)
+        countdownSeconds = left
+        while (left > 1) {
+            delay(1_000)
+            left -= 1
+            countdownSeconds = left
         }
     }
 
@@ -520,7 +589,29 @@ fun PlayerScreen(
                 }
             }
 
+            override fun onRenderedFirstFrame() {
+                // 首帧已经画到屏幕上：立刻撤掉「正在连接 / 还有 N 秒」，并把台号行翻到这一台。
+                // 10-25 实拍：首帧比 STATE_READY 早，湖南卫视那一跳画面已出、倒计时还压着 2 秒。
+                // 这一行是给「倒计时到底压了多久」留证据用的（adb logcat -s ZapFix）。
+                android.util.Log.i(
+                    "ZapFix",
+                    "firstFrame channel=${channel.id} line=${lineBeingPlayed + 1}" +
+                        " t=${SystemClock.elapsedRealtime()}",
+                )
+                isBuffering = false
+                statusText = ""
+                shownName = channel.name
+                shownMeta = captionMeta(channelNumber, categoryNameOf(channel.category), channel.subgroup)
+            }
+
             override fun onVideoSizeChanged(size: VideoSize) {
+                // 掉清晰度这条诊断线：屏幕上「全高清 → 高清」到底是同一条线在降档，还是换了线路，
+                // 看这行的 line= 有没有变就知道（adb logcat -s QualityWatch）。
+                android.util.Log.i(
+                    "QualityWatch",
+                    "channel=${channel.id} line=${lineBeingPlayed + 1} ${size.width}x${size.height}" +
+                        " t=${SystemClock.elapsedRealtime()}",
+                )
                 videoSize = size
             }
 
@@ -529,19 +620,51 @@ fun PlayerScreen(
                 if (playing) {
                     isBuffering = false
                     statusText = ""
+                    shownName = channel.name   // 万一某些解码器不回调首帧，这一臂兜底
+                    shownMeta = captionMeta(channelNumber, categoryNameOf(channel.category), channel.subgroup)
                     playedLines.add(lineBeingPlayed)
                     prefs.setLine(channel.id, url)
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                tryNextLine(friendlyError(error))
+                val message = friendlyError(error)
+                // 用户 10-25 点档「可重试那一类等满、不可重试那类不等」：
+                // 网络没连上／连接超时这类再等有可能变好，就不在这里抢着换线——把这一档设置的时长
+                // 等满（倒计时照走、errorMessage 先不落，屏幕上那句「还有 N 秒」不中断），
+                // 到点由上面那个看门狗按 LineRecovery 决定原地重连还是换下一条；
+                // 而对端已经答复过内容不对／容器解不了／解码失败这类，等满也不会变好，立刻走。
+                if (FaultPolicy.waitOutWindow(error.errorCode) &&
+                    lineSeconds * 1_000L > SystemClock.elapsedRealtime() - windowStartedAt
+                ) {
+                    statusText = if (streamIndex == 0) {
+                        connectingText(channel.name, 0)
+                    } else {
+                        "正在尝试线路 ${streamIndex + 1}…"
+                    }
+                    errorMessage = null
+                    isBuffering = true
+                    return
+                }
+                tryNextLine(message)
             }
         }
         exoPlayer.addListener(listener)
 
         try {
-            val mediaItem = MediaItem.fromUri(url)
+            // 直播延时（用户 10-24 18:3x「优化线路延时高」）：Media3 默认落后直播点 3 秒，
+            // 这里压到 2 秒；追帧倍速放宽到 0.95–1.10，落后多了靠轻微加速追回来，不靠跳帧。
+            // 只对直播生效（点播/回看忽略 LiveConfiguration）。
+            val mediaItem = MediaItem.Builder()
+                .setUri(url)
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(2_000)
+                        .setMinPlaybackSpeed(0.95f)
+                        .setMaxPlaybackSpeed(1.10f)
+                        .build(),
+                )
+                .build()
             val mediaSource = when {
                 url.contains(".m3u8", ignoreCase = true) ||
                     url.contains("m3u", ignoreCase = true) ->
@@ -809,28 +932,19 @@ fun PlayerScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = channel.name,
+                        text = shownName,
                         color = Color.White,
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = (if (channelNumber != null) "台号 $channelNumber · " else "") +
-                            "$categoryName · ${channel.subgroup}",
+                        text = shownMeta,
                         color = Color(0xFFCBD5E1),
                         fontSize = 15.sp,
                     )
-                    if (prefs.epgEnabled && onAirProgram != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = onAirLine(onAirProgram),
-                            color = TvColors.Success,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    // 左上角那句「正在播什么」按用户 10-25 指令 2 摘掉了：节目单只看控制栏
+                    // 「节目单」按钮打开的那张表，画面上不再叠一层 EPG 字样。
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
@@ -839,8 +953,11 @@ fun PlayerScreen(
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    // 播通时这一行不再写字样（用户 10-23：去掉画面上的「直播」文字），暂停/换线提示照旧。
+                    // 播通时这一行不再写字样（用户 10-23：去掉画面上的「直播」文字），暂停提示照旧。
+                    // 还没出画面的等待期也只留「线路 k / N」这一条（用户 10-25 指令 3）：
+                    // 那句状态文字已经写在画面中间的倒计时上，同屏不能出现两句一样的提示。
                     val playStatus = when {
+                        waitingForPicture -> ""
                         statusText.isNotBlank() -> statusText
                         isPlaying -> ""
                         else -> "已暂停"
@@ -853,7 +970,13 @@ fun PlayerScreen(
                             fontSize = 13.sp,
                         )
                     }
-                    val resolution = if (prefs.showVideoResolution) resolutionLine(videoSize) else null
+                    // 分辨率行照旧归设置里的「显示清晰度」管，只是等待期间不出现（同上，10-25 指令 3），
+                    // 画面播稳之后这一段自己恢复。
+                    val resolution = if (prefs.showVideoResolution && !waitingForPicture) {
+                        resolutionLine(videoSize)
+                    } else {
+                        null
+                    }
                     if (resolution != null) {
                         Spacer(Modifier.height(3.dp))
                         Text(
@@ -866,31 +989,24 @@ fun PlayerScreen(
             }
         }
 
-        if (errorMessage == null && isBuffering && !isPlaying) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(32.dp))
-                        .background(Color.Black.copy(alpha = 0.45f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        color = TvColors.Accent,
-                        strokeWidth = 4.dp,
-                        modifier = Modifier.size(38.dp),
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = statusText.ifBlank { "缓冲中…" },
-                    color = Color.White.copy(alpha = 0.82f),
-                    fontSize = 15.sp,
-                )
-            }
+        // 换线/换台还没出画面这一段：画面中间只留这一句按设置时长递减的倒计时，
+        // 原来那个「转圈 + 缓冲中」整块不再出现（用户 10-25 指令 3）。
+        if (waitingForPicture) {
+            Text(
+                text = countdownLine(statusText, countdownSeconds.coerceAtLeast(1)),
+                color = Color.White,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .width(760.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 28.dp, vertical = 16.dp),
+            )
         }
 
         // 数字键选台：把正在输入的那几位数显示在右下角，停手 2.5 秒后按台号跳过去。
@@ -941,38 +1057,9 @@ fun PlayerScreen(
                         enabled = queue.size > 1,
                         onClick = { channelPickerVisible = true },
                     )
-                    PlayerActionButton(
-                        icon = Icons.Rounded.SkipPrevious,
-                        label = "上一个",
-                        enabled = queue.size > 1,
-                        onClick = { zap(-1) },
-                    )
-                    PlayerActionButton(
-                        icon = Icons.Rounded.SkipNext,
-                        label = "下一个",
-                        enabled = queue.size > 1,
-                        onClick = { zap(1) },
-                    )
-                    PlayerActionButton(
-                        icon = Icons.Rounded.AspectRatio,
-                        label = aspectLabels[aspectIndex],
-                        onClick = { aspectIndex = (aspectIndex + 1) % aspectModes.size },
-                    )
-                    PlayerActionButton(
-                        icon = if (channel.id in favorites) {
-                            Icons.Rounded.Favorite
-                        } else {
-                            Icons.Rounded.FavoriteBorder
-                        },
-                        label = if (channel.id in favorites) "已收藏" else "收藏",
-                        accent = channel.id in favorites,
-                        onClick = { onToggleFavorite(channel) },
-                    )
-                    PlayerActionButton(
-                        icon = Icons.Rounded.Schedule,
-                        label = "节目单",
-                        onClick = { guideVisible = true },
-                    )
+                    // 用户 10-25 指令 1：这一排去掉「上一个／下一个／铺满／收藏」四颗
+                    //（换台靠上下键与数字键，画面比例留给设置里的菜单键，收藏在首页做），
+                    // 并把「节目单」与「时长」两颗的位置对调。
                     PlayerActionButton(
                         icon = Icons.Rounded.Timer,
                         label = "时长 ${lineSeconds}秒",
@@ -986,6 +1073,11 @@ fun PlayerScreen(
                             }
                             prefs.lineSwitchSeconds = lineSeconds
                         },
+                    )
+                    PlayerActionButton(
+                        icon = Icons.Rounded.Schedule,
+                        label = "节目单",
+                        onClick = { guideVisible = true },
                     )
                     Spacer(Modifier.weight(1f))
                     PlayerActionButton(
@@ -1082,7 +1174,10 @@ fun PlayerScreen(
                 selectedIndex = streamIndex,
                 probes = lineProbes,
                 probing = probingLines,
+                playingSize = videoSize,
+                catalogQualityOf = lineQualityOf,
                 onRefresh = { probeNonce += 1 },
+                onZap = ::zap,
                 onSelect = ::chooseLine,
                 onDismiss = { linePickerVisible = false },
             )
@@ -1095,6 +1190,7 @@ fun PlayerScreen(
                 numbers = channelNumbers,
                 totalChannels = numberedChannels.size,
                 favorites = favorites,
+                onZap = ::zap,
                 onSelect = { position ->
                     channelPickerVisible = false
                     jumpTo(position)
@@ -1108,6 +1204,7 @@ fun PlayerScreen(
                 channelName = channel.name,
                 programs = upcomingPrograms,
                 epgEnabled = prefs.epgEnabled,
+                onZap = ::zap,
                 onDismiss = { guideVisible = false },
             )
         }
@@ -1178,6 +1275,79 @@ private suspend fun sampleSurfaceHash(view: SurfaceView, buf: IntArray): Long? {
 private fun connectingText(channelName: String, lineIndex: Int): String =
     if (lineIndex == 0) "正在连接 $channelName…" else "正在尝试线路 ${lineIndex + 1}…"
 
+/**
+ * 还没出画面时画面中间那一句（用户 10-25 指令 3：「将 loading 改为设置的时长的倒计时」）。
+ *
+ * 前半截直接沿用状态栏那句话的口径（[connectingText] 给的就是「正在连接 某台…」/
+ * 「正在尝试线路 k…」，原地重连、切备用线那些字样也一并留着），末尾挂上还剩几秒：
+ * 同屏不再出现两句重复提示，右上角这一段等待期只留「线路 k / N」。
+ * 全中文，不留 loading 这种英文字样。
+ */
+private fun countdownLine(status: String, secondsLeft: Int): String {
+    val head = status.removeSuffix("…").trim().ifBlank { "正在连接" }
+    return "$head · 还有 $secondsLeft 秒"
+}
+
+/**
+ * 遥控器操作优先级最高（用户 10-24 18:3x「不受状态栏等遮罩影响」）：
+ * 选台/选线/节目单是**独立窗口**，根布局那层 preview 收不到它们的按键，
+ * 所以每个弹层自己接一遍 CH± 与媒体上一台/下一台——弹层开着也能直接换台，
+ * 换台那一下由 [PlayerScreen] 的 jumpTo 统一把弹层收掉。
+ * 上下键不在这里抢：弹层里它们要用来走列表（那是用户明确要的焦点导航）。
+ */
+private fun Modifier.zapWhileOpen(onZap: (Int) -> Unit): Modifier = onPreviewKeyEvent { event ->
+    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+    when (event.key) {
+        Key.ChannelUp, Key.MediaPrevious -> {
+            onZap(-1)
+            true
+        }
+
+        Key.ChannelDown, Key.MediaNext -> {
+            onZap(1)
+            true
+        }
+
+        else -> false
+    }
+}
+
+/** 清晰度标签（用户 10-24 18:3x「线路选择加清晰度」）：标签 + 原始尺寸，尺寸未知返回 null。 */
+private fun qualityText(width: Int, height: Int): String? {
+    if (width <= 0 || height <= 0) return null
+    val tier = when {
+        height >= 2000 || width >= 3800 -> "4K"
+        height >= 1000 || width >= 1900 -> "全高清"
+        height >= 700 || width >= 1200 -> "高清"
+        else -> "标清"
+    }
+    return "$tier $width×$height"
+}
+
+/** 清单/目录里写的那一档（"1920×1080"、"1920x1080"）转成同一个标签；读数为空返回 null。 */
+private fun qualityText(resolution: String?): String? {
+    val m = Regex("(\\d+)[×x](\\d+)").find(resolution ?: return null) ?: return null
+    return qualityText(m.groupValues[1].toIntOrNull() ?: 0, m.groupValues[2].toIntOrNull() ?: 0)
+}
+
+/**
+ * 选线面板里一条线的清晰度标签，按「谁最准」依次取第一个有读数的来源
+ *（用户 10-25 指令 5「线路选择画面没看到每条线路的清晰度」）：
+ * 正在播的这条用播放器报的真实解码尺寸 → 目录里构建时实测的尺寸（每条线都有）
+ * → 本次打开面板的现场探针读数 → 三样都没有返回 null，由调用方写「清晰度未知」。
+ */
+private fun lineQualityLabel(
+    playingLine: Boolean,
+    playingSize: VideoSize?,
+    catalogResolution: String?,
+    probeResolution: String?,
+): String? {
+    if (playingLine && playingSize != null) {
+        qualityText(playingSize.width, playingSize.height)?.let { return it }
+    }
+    return qualityText(catalogResolution) ?: qualityText(probeResolution)
+}
+
 private fun resolutionLine(size: VideoSize?): String? {
     val width = size?.width ?: 0
     val height = size?.height ?: 0
@@ -1191,17 +1361,12 @@ private fun resolutionLine(size: VideoSize?): String? {
     return "$width×$height · $tier"
 }
 
-private fun onAirLine(program: EpgProgram, now: Long = System.currentTimeMillis()): String {
-    val minutes = ((program.stop - now) / 60_000L).coerceAtLeast(0L)
-    val range = "${BeijingTime.format(program.start, "HH:mm")}-${BeijingTime.format(program.stop, "HH:mm")}"
-    return "${program.title} · $range · 还剩 $minutes 分钟"
-}
-
 @Composable
 private fun ProgramGuideDialog(
     channelName: String,
     programs: List<EpgProgram>,
     epgEnabled: Boolean,
+    onZap: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val now = System.currentTimeMillis()
@@ -1216,6 +1381,7 @@ private fun ProgramGuideDialog(
             modifier = Modifier
                 .width(760.dp)
                 .heightIn(max = 560.dp)
+                .zapWhileOpen(onZap)
                 .clip(RoundedCornerShape(22.dp))
                 .background(TvColors.BackgroundAlt)
                 .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
@@ -1371,6 +1537,7 @@ private fun ChannelPickerDialog(
     numbers: Map<String, Int>,
     totalChannels: Int,
     favorites: Set<String>,
+    onZap: (Int) -> Unit,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1392,6 +1559,7 @@ private fun ChannelPickerDialog(
             modifier = Modifier
                 .width(880.dp)
                 .heightIn(max = 620.dp)
+                .zapWhileOpen(onZap)
                 .clip(RoundedCornerShape(22.dp))
                 .background(TvColors.BackgroundAlt)
                 .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
@@ -1539,7 +1707,10 @@ private fun LinePickerDialog(
     selectedIndex: Int,
     probes: Map<Int, StreamProbe.Result>,
     probing: Boolean,
+    playingSize: VideoSize?,
+    catalogQualityOf: (String) -> String?,
     onRefresh: () -> Unit,
+    onZap: (Int) -> Unit,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1561,6 +1732,7 @@ private fun LinePickerDialog(
             modifier = Modifier
                 .width(820.dp)
                 .heightIn(max=492.dp)
+                .zapWhileOpen(onZap)
                 .clip(RoundedCornerShape(22.dp))
                 .background(TvColors.BackgroundAlt)
                 .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
@@ -1574,7 +1746,8 @@ private fun LinePickerDialog(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = "${channel.name} · 共 ${channel.streams.size} 条 · 绿=清单和画面都取到 · 黄=清单通但画面取不到",
+                text = "${channel.name} · 共 ${channel.streams.size} 条 · 绿=可用 · " +
+                    "黄=清单通但画面取不到 · 清晰度取自当前解码/目录实测/现场探测，都没有写未知",
                 color = TvColors.TextSecondary,
                 fontSize = 13.sp,
                 maxLines = 1,
@@ -1596,6 +1769,16 @@ private fun LinePickerDialog(
                         selected = lineIndex == selectedIndex,
                         result = probes[lineIndex],
                         probing = probing,
+                        // 每条线的清晰度按「谁最准」依次取：正在播的这条用播放器报的真实解码尺寸
+                        // → 目录里构建时实测的尺寸（每条线都有，不再只有正在播的那条看得见）
+                        // → 本次打开面板的现场探针读数 → 都没有才写「清晰度未知」
+                        //（用户 10-25 指令 5「线路选择画面没看到每条线路的清晰度」）。
+                        quality = lineQualityLabel(
+                            playingLine = lineIndex == selectedIndex,
+                            playingSize = playingSize,
+                            catalogResolution = catalogQualityOf(url),
+                            probeResolution = probes[lineIndex]?.resolution,
+                        ) ?: "清晰度未知",
                         focusRequester = if (lineIndex == selectedIndex) selectedFocus else null,
                         onClick = { onSelect(lineIndex) },
                     )
@@ -1641,6 +1824,7 @@ private fun LineChoiceRow(
     selected: Boolean,
     result: StreamProbe.Result?,
     probing: Boolean,
+    quality: String,
     focusRequester: FocusRequester?,
     onClick: () -> Unit,
 ) {
@@ -1715,7 +1899,7 @@ private fun LineChoiceRow(
             }
             Spacer(Modifier.height(2.dp))
             Text(
-                text = streamLabel(url),
+                text = "$quality · ${streamLabel(url)}",
                 color = TvColors.TextSecondary,
                 fontSize = 12.sp,
                 maxLines = 1,
@@ -1770,3 +1954,7 @@ private fun friendlyError(error: Throwable): String {
         "$reason（代码 $code）"
     }
 }
+
+/** 左上角第二行：「台号 N · 分组 · 子组」。台号行与画面同刻翻页时两处都用这一句。 */
+private fun captionMeta(number: Int?, category: String, subgroup: String): String =
+    (if (number != null) "台号 $number · " else "") + "$category · $subgroup"

@@ -79,12 +79,17 @@ class CatalogUpdater(private val context: Context) {
         // 目录生成时实测判坏的那些地址（随 channels.json 一起装进 APK）。
         // 公开源下一次还会把它们带回来，合并时按黑名单挡掉——这是「可用性优于数量」在设备端的那一环。
         val blocked = base.blockedLines.keys
+        // 构建按台标改挂过的那些地址（台标证据在 tools/wshi_logo_moves.json，理由写在每条记录里）。
+        val moves = base.lineMoves
         val merged = base.channels.mapNotNull { channel ->
             val fresh = discovered[normalize(channel.name)].orEmpty()
             // 台标实测属于本台、却常被公开源挂到别名下的线，改挂进来并排在最前；
-            // 新线路之间按 IPv6 优先排；这台电视真出过画面的那条线顶到第一条（见 CatalogMerge）。
+            // 新线路之间按 IPv6 优先排；这台电视真出过画面的那条顶到第一条——
+            // 但央视·卫视与地方频道两组除外（用户 2026-10-25：清晰度排序压过播过置顶），
+            // 那两组按打进 APK 的那一份目录复位，连旧版本已经置顶在缓存里的那条也一并归位。
             val lines = CatalogMerge.streams(channel.name, channel.streams, fresh,
-                settings.lineFor(channel.id), blocked)
+                settings.lineFor(channel.id), blocked, moves, channel.category,
+                (assets.channels.firstOrNull { it.id == channel.id }?.streams ?: channel.streams))
             added += lines.count { kept ->
                 channel.streams.none { StreamUrl.sameLine(it, kept) }
             }
@@ -180,20 +185,35 @@ class CatalogUpdater(private val context: Context) {
     }
 
     private suspend fun probeChannel(channel: TvChannel, played: String?): ProbeOutcome {
-        var good = -1
-        for (position in channel.streams.indices) {
-            if (StreamProbe.probe(channel.streams[position]).playable) {
-                good = position
-                break
+        // 用户 10-25「未来新增的线路也不添加标清线路」：公开列表不写尺寸，所以设备端在探测
+        // 读到 RESOLUTION 的那一刻就把只有标清档的那一条摘掉（这台电视真播过的那条例外，
+        // 长期指令：已播过的线路绝不自动换线/换台）。摘掉后要把整条链走完，
+        // 否则下次探测第一条还是它。
+        val sd = LinkedHashSet<String>()
+        var winner: String? = null
+        for (url in channel.streams) {
+            val outcome = StreamProbe.probe(url)
+            if (!outcome.playable) continue
+            if (url != played && Definition.isSdResolution(outcome.resolution)) {
+                sd += url
+                continue
             }
+            winner = url
+            break
         }
-        if (good < 0) return ProbeOutcome(channel, channel.streams.size, false, false)
+        val kept = if (sd.isEmpty()) channel.streams else channel.streams.filterNot { it in sd }
+        // 探到能用那条为止一共探了几条：标清那些都是在它之前探到的，没探完的（winner 为空）就是全探了。
+        val tried = if (winner == null) channel.streams.size else sd.size + kept.indexOf(winner) + 1
+        if (winner == null) {
+            return ProbeOutcome(if (sd.isEmpty()) channel else channel.copy(streams = kept),
+                                tried, false, sd.isNotEmpty())
+        }
         // 探到的那条排到最前，但**这台电视真播过的那条更靠前**（用户 2026-10-21 指令：
         // 已播过的线路绝不自动换线/换台）。以前这里直接把探到的第一条顶上去，
         // 于是按一次「立即更新」就可能把父母天天看的那条线从第 1 位挪走——
         // 播放中确实不换线（LineRecovery），但下次进这个台要先试的就是别的地址了。
-        val ordered = CatalogMerge.probeOrder(channel.streams, good, played)
-        return ProbeOutcome(channel.copy(streams = ordered), good + 1, true, ordered != channel.streams)
+        val ordered = CatalogMerge.probeOrder(kept, kept.indexOf(winner), played, channel.category)
+        return ProbeOutcome(channel.copy(streams = ordered), tried, true, ordered != channel.streams)
     }
 
     private data class ProbeOutcome(
@@ -259,8 +279,12 @@ class CatalogUpdater(private val context: Context) {
                     if (name != null) {
                         val urls = out.getOrPut(normalize(name)) { mutableListOf() }
                         if (StreamRules.neverPlayable(line) == null &&
+                            !Definition.isSdTitle(name) &&
                             urls.none { StreamUrl.sameLine(it, line) }
                         ) {
+                            // 「未来新增的线路也不添加标清线路」（用户 10-25）：设备端量不到尺寸，
+                            // 只挡标题自己写着标清的那一类；按尺寸摘那一半在构建侧（build_catalog 的
+                            // is_sd_line），地址随 blockedLines 装进 APK 一起挡。
                             urls.add(line)
                         }
                     }
@@ -363,18 +387,44 @@ internal object CatalogMerge {
      * 改挂进本台的线排最前（台标实测过的那条），再依次是内置线路和公开源新发现的；
      * 新发现的这一批内部按 IPv6 优先（用户 2026-10-22 指令：家里网络有 IPv6 出口，
      * 而本机没有 v6 出口，v6 线路在本机永远只能读到「连不通」，不该按 IPv4 的次序压在后面）。
+     *
+     * [moves] 是目录里的「按台标改挂」记录（用户 10-25 指令：台标与频道不一致的移入对应卫视频道）：
+     * 构建已经把这条地址搬进台标对应的那一台，这里只挡另一半——公开列表下一次按**旧台名**再送过来时，
+     * 不许它回到错误频道名下（与 blockedLines 同一个漏口，见 RelabeledStreams）。
      */
     fun streams(channelName: String, packaged: List<String>, fresh: List<String>,
-                playable: String? = null, blocked: Set<String> = emptySet()): List<String> =
-        putPlayableFirst(
-            (RelabeledStreams.linesFor(channelName) + packaged +
-                fresh.sortedByDescending { StreamUrl.isIpv6(it) })
-                .filterNot { DeadStreams.isDead(it) || isBlocked(it, blocked, playable) }
-                .filterNot { StreamRules.neverPlayable(it) != null }
-                .filterNot { RelabeledStreams.belongsElsewhere(channelName, it) }
-                .distinctBy { StreamUrl.canonical(it) },
-            playable,
-        )
+                playable: String? = null, blocked: Set<String> = emptySet(),
+                moves: Map<String, LineMove> = emptyMap(),
+                category: String? = null,
+                assetOrder: List<String> = emptyList()): List<String> {
+        val merged = (RelabeledStreams.linesFor(channelName) + packaged +
+            fresh.sortedByDescending { StreamUrl.isIpv6(it) })
+            .filterNot { DeadStreams.isDead(it) || isBlocked(it, blocked, playable) }
+            .filterNot { StreamRules.neverPlayable(it) != null }
+            .filterNot { RelabeledStreams.belongsElsewhere(channelName, it, moves) }
+            .distinctBy { StreamUrl.canonical(it) }
+        return if (category in RESOLUTION_FIRST_CATEGORIES) byAssetOrder(merged, assetOrder)
+        else putPlayableFirst(merged, playable)
+    }
+
+    /**
+     * 按打进 APK 那一份目录的次序重排。
+     *
+     * 为什么不能只靠「不置顶」：设备这一棒的底稿是 `files/channels_live.json`（上一次更新落的那份），
+     * 那条播过的线在**旧版本**里已经被顶到第 1 位了，光关掉置顶它还是留在第 1 位。
+     * 内置目录就是按清晰度排好的那一份，所以这两组直接照它复位；
+     * 目录里没有的（公开源这次新带回来的）保持原有相对次序排在后面。
+     */
+    fun byAssetOrder(streams: List<String>, assetOrder: List<String>): List<String> {
+        if (assetOrder.isEmpty()) return streams
+        val rank = HashMap<String, Int>()
+        assetOrder.forEachIndexed { index, url ->
+            val key = StreamUrl.canonical(url)
+            if (!rank.containsKey(key)) rank[key] = index
+        }
+        val last = assetOrder.size
+        return streams.sortedBy { rank[StreamUrl.canonical(it)] ?: last }
+    }
 
     /**
      * 目录证据判坏的地址：公开源下一次还会把它带回来，合并时按归一键挡掉。
@@ -389,15 +439,23 @@ internal object CatalogMerge {
 
     /**
      * 「立即更新」探测之后怎么排这一台的线路：探到的那条上到第 1 位，
-     * 但这台电视真播过（或用户手工选过）的那条永远压在它前面。
-     *
-     * 次序反过来就是 bug：探测是在这台机器的网络上看到的，而播过那条线是在父母眼前出过画面的。
+     * 而这台电视真播过（或用户手工选过）的那条要不要再压它一手，看 [category]。
      */
-    fun probeOrder(streams: List<String>, goodIndex: Int, played: String?): List<String> =
-        putPlayableFirst(
-            listOf(streams[goodIndex]) + streams.filterIndexed { position, _ -> position != goodIndex },
-            played,
-        )
+    fun probeOrder(streams: List<String>, goodIndex: Int, played: String?,
+                   category: String? = null): List<String> {
+        val probed = listOf(streams[goodIndex]) +
+            streams.filterIndexed { position, _ -> position != goodIndex }
+        return if (category in RESOLUTION_FIRST_CATEGORIES) probed
+        else putPlayableFirst(probed, played)
+    }
+
+    /**
+     * 这两组「线路按清晰度由高到低」（用户 2026-10-25 指令，与构建侧 RES_FIRST_CATS 同一份口径）：
+     * 打进 APK 的那一份次序已经是清晰度序，所以这里要做的是**别再动它**——
+     * 别的组仍按 10-21/10-22 那条走（播过那条最前）；分组认不出来（category 为空）也按老规矩置顶，
+     * 宁可不改次序，也不要把天天看的那条挪走。
+     */
+    val RESOLUTION_FIRST_CATEGORIES = setOf("cctv", "local")
 
     /**
      * 把这台电视**真出过画面**（或用户手工选过）的那条线顶到第一条。

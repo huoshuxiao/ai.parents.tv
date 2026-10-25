@@ -183,525 +183,21 @@
    "ipv6": false
   },
   {
-   "url": "http://live.spccmc.com:90/live/spxwzh.m3u8",
+   "url": "http://amdlive-ch01.ctnd.com.edgesuite.net/arirang_1ch/smil:arirang_1ch.smil/playlist.m3u8",
    "verdict": null,
-   "canonical": "http://live.spccmc.com:90/live/spxwzh.m3u8",
+   "canonical": "http://amdlive-ch01.ctnd.com.edgesuite.net/arirang_1ch/smil:arirang_1ch.smil/playlist.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://192.151.150.154/live/cctv2hd.m3u8",
+   "url": "https://tencentplay.gztv.com/live/nanguodushi.m3u8?txSecret=550af55c0ea34ce492748481415b6dfa&txTime=1903e7b17de",
    "verdict": null,
-   "canonical": "http://192.151.150.154/live/cctv2hd.m3u8",
+   "canonical": "https://tencentplay.gztv.com/live/nanguodushi.m3u8?txSecret=550af55c0ea34ce492748481415b6dfa&txTime=1903e7b17de",
    "ipv6": false
   },
   {
-   "url": "http://183.64.181.25:40023/rongchang01.m3u8",
+   "url": "http://8.138.7.223/tv/cctv2.php",
    "verdict": null,
-   "canonical": "http://183.64.181.25:40023/rongchang01.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live1.gatv.com.cn:85/live/GGPD_ggpdzm.m3u8",
-   "verdict": null,
-   "canonical": "http://live1.gatv.com.cn:85/live/GGPD_ggpdzm.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.shaoxing.com.cn/video/s10001-sxtv2/index.m3u8",
-   "verdict": null,
-   "canonical": "http://live.shaoxing.com.cn/video/s10001-sxtv2/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream3.jlntv.cn:80/aac_dfgb/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://stream3.jlntv.cn/aac_dfgb/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://radiovid.foxnews.com/hls/live/661547/RADIOVID/index.m3u8",
-   "verdict": null,
-   "canonical": "https://radiovid.foxnews.com/hls/live/661547/RADIOVID/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel104601/playlist.m3u8",
-   "verdict": null,
-   "canonical": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel104601/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://182.150.115.21:8030/pcgacg/pcgacg_0.m3u8",
-   "verdict": null,
-   "canonical": "http://182.150.115.21:8030/pcgacg/pcgacg_0.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv1hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv1hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.jinnews.com.cn/xwzh/sd/live.m3u8",
-   "verdict": null,
-   "canonical": "http://live.jinnews.com.cn/xwzh/sd/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://192.151.150.154/live/cctv3hd.m3u8",
-   "verdict": null,
-   "canonical": "http://192.151.150.154/live/cctv3hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv11hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv11hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://124.116.183.146:9901/tsfile/live/0012_1.m3u8",
-   "verdict": null,
-   "canonical": "http://124.116.183.146:9901/tsfile/live/0012_1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cqwshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cqwshd",
-   "ipv6": false
-  },
-  {
-   "url": "http://gslbserv.itv.cmvideo.cn//index.m3u8?channel-id=FifastbLive&Contentid=3000000001000008001&livemode=1&stbId=YanG-1989",
-   "verdict": null,
-   "canonical": "http://gslbserv.itv.cmvideo.cn//index.m3u8?channel-id=FifastbLive&Contentid=3000000001000008001&livemode=1&stbId=YanG-1989",
-   "ipv6": false
-  },
-  {
-   "url": "http://file.ysxtv.cn/cms/videos/nmip-media/channellive/channel4/playlist.m3u8?zsicd#http://file.ysxtv.cn/cms/videos/nmip-media/channellive/channel4/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://file.ysxtv.cn/cms/videos/nmip-media/channellive/channel4/playlist.m3u8?zsicd",
-   "ipv6": false
-  },
-  {
-   "url": "http://198.204.228.26/live/cctv17hd.m3u8",
-   "verdict": null,
-   "canonical": "http://198.204.228.26/live/cctv17hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://0472.org/hls/cgtnx.m3u8",
-   "verdict": null,
-   "canonical": "https://0472.org/hls/cgtnx.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXjinyun1/720p.m3u8?zzhed",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXjinyun1/720p.m3u8?zzhed",
-   "ipv6": false
-  },
-  {
-   "url": "http://traffic.jbh.tjbh.com/live/bhtv10/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://traffic.jbh.tjbh.com/live/bhtv10/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://drk6xq0vhn.gpcdn.net/live/animal_planet_sd_abr/index.m3u8",
-   "verdict": null,
-   "canonical": "https://drk6xq0vhn.gpcdn.net/live/animal_planet_sd_abr/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://192.151.150.154/live/cctv17hd.m3u8",
-   "verdict": null,
-   "canonical": "http://192.151.150.154/live/cctv17hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv13hd.m3u8?auth=test20251009",
-   "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv13hd.m3u8?auth=test20251009",
-   "ipv6": false
-  },
-  {
-   "url": "http://192.151.150.154/live/cctv14hd.m3u8",
-   "verdict": null,
-   "canonical": "http://192.151.150.154/live/cctv14hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv12hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv12hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://dash4.antik.sk/live/test_euronews/playlist.m3u8",
-   "verdict": null,
-   "canonical": "https://dash4.antik.sk/live/test_euronews/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225641/index.m3u8",
-   "verdict": null,
-   "canonical": "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225641/index.m3u8",
-   "ipv6": true
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXyuhang2/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXyuhang2/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv5hd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv5hd",
-   "ipv6": false
-  },
-  {
-   "url": "http://124.116.183.146:9901/tsfile/live/0011_1.m3u8",
-   "verdict": null,
-   "canonical": "http://124.116.183.146:9901/tsfile/live/0011_1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.dxhmt.cn:9081/tv/11329-1.m3u8",
-   "verdict": null,
-   "canonical": "http://live.dxhmt.cn:9081/tv/11329-1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv5hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv5hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.hnxttv.com:9601/live/xwzh/800K/tzwj_video.m3u8",
-   "verdict": null,
-   "canonical": "http://live.hnxttv.com:9601/live/xwzh/800K/tzwj_video.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000015686&livemode=1&stbId=YanG-1989",
-   "verdict": null,
-   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000015686&livemode=1&stbId=YanG-1989",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=lnwshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=lnwshd",
-   "ipv6": false
-  },
-  {
-   "url": "http://198.204.228.26/live/cctv16hd.m3u8",
-   "verdict": null,
-   "canonical": "http://198.204.228.26/live/cctv16hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=qhws",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=qhws",
-   "ipv6": false
-  },
-  {
-   "url": "http://tencentplay.gztv.com/live/xinwen.m3u8?txSecret=d2c2db0b598c02ec1b5623728434d367&txTime=18d57929bd3",
-   "verdict": null,
-   "canonical": "http://tencentplay.gztv.com/live/xinwen.m3u8?txSecret=d2c2db0b598c02ec1b5623728434d367&txTime=18d57929bd3",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.dxhmt.cn:9081/tv/11481-1.m3u8",
-   "verdict": null,
-   "canonical": "http://live.dxhmt.cn:9081/tv/11481-1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv2hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv2hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://liveout.btzx.com.cn/3pyc0h/dbfvwu.m3u8",
-   "verdict": null,
-   "canonical": "https://liveout.btzx.com.cn/3pyc0h/dbfvwu.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://l.cztvcloud.com/channels/lantian/SXlongyou1/720p.m3u8",
-   "verdict": null,
-   "canonical": "https://l.cztvcloud.com/channels/lantian/SXlongyou1/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXyuyao1/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXyuyao1/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd",
-   "verdict": null,
-   "canonical": "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=dnwshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=dnwshd",
-   "ipv6": false
-  },
-  {
-   "url": "https://live-auth.51kandianshi.com/szgd/csztv2.m3u8",
-   "verdict": null,
-   "canonical": "https://live-auth.51kandianshi.com/szgd/csztv2.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://38.75.136.137:98/gslb/dsdqpub/cctv10hd.m3u8?auth=testpub",
-   "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/cctv10hd.m3u8?auth=testpub",
-   "ipv6": false
-  },
-  {
-   "url": "https://streaming.aurora.enhanced.live/live/mpc/enl0eG1mLmVncmVzcy5mZDJ2eHI=/out/v1/IT_SIMULCAST/DISCOVERYCHANNEL/CMAF/index.m3u8",
-   "verdict": null,
-   "canonical": "https://streaming.aurora.enhanced.live/live/mpc/enl0eG1mLmVncmVzcy5mZDJ2eHI=/out/v1/IT_SIMULCAST/DISCOVERYCHANNEL/CMAF/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://124.116.183.146:9901/tsfile/live/0010_1.m3u8",
-   "verdict": null,
-   "canonical": "http://124.116.183.146:9901/tsfile/live/0010_1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hbwshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hbwshd",
-   "ipv6": false
-  },
-  {
-   "url": "http://175.155.106.72:89/live1/live1.m3u8",
-   "verdict": null,
-   "canonical": "http://175.155.106.72:89/live1/live1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream8.jlntv.cn/hctv/sd/live.m3u8",
-   "verdict": null,
-   "canonical": "http://stream8.jlntv.cn/hctv/sd/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv8hd.m3u8?auth=test20251009",
-   "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv8hd.m3u8?auth=test20251009",
-   "ipv6": false
-  },
-  {
-   "url": "http://218.84.127.245:1026/hls/main1/playlist.m3u8?zxinjd,",
-   "verdict": null,
-   "canonical": "http://218.84.127.245:1026/hls/main1/playlist.m3u8?zxinjd,",
-   "ipv6": false
-  },
-  {
-   "url": "http://107.150.60.122/live/cctv10hd.m3u8",
-   "verdict": null,
-   "canonical": "http://107.150.60.122/live/cctv10hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXzhuji3/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXzhuji3/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221225645/index.m3u8",
-   "verdict": null,
-   "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221225645/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://p2hs.vzan.com/slowlive/317913155078575177/live.m3u8",
-   "verdict": null,
-   "canonical": "https://p2hs.vzan.com/slowlive/317913155078575177/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://jwcdnqx.hebyun.com.cn/live/rqtv1/1500k/tzwj_video.m3u8",
-   "verdict": null,
-   "canonical": "https://jwcdnqx.hebyun.com.cn/live/rqtv1/1500k/tzwj_video.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8",
-   "verdict": null,
-   "canonical": "https://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://192.151.150.154/live/cctv9hd.m3u8",
-   "verdict": null,
-   "canonical": "http://192.151.150.154/live/cctv9hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://tvfile.mcrm.org.cn/nmip-media/channellive/channel103064/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://tvfile.mcrm.org.cn/nmip-media/channellive/channel103064/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://tylive.kan0512.com/norecord/csztv4k_4k.m3u8",
-   "verdict": null,
-   "canonical": "http://tylive.kan0512.com/norecord/csztv4k_4k.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://60.222.246.220:19433/hls1.m3u8",
-   "verdict": null,
-   "canonical": "http://60.222.246.220:19433/hls1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream.mcquack.net/114/index.m3u8",
-   "verdict": null,
-   "canonical": "http://stream.mcquack.net/114/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://amg00405-rakutentv-cgtn-rakuten-i9tar.amagi.tv/master.m3u8",
-   "verdict": null,
-   "canonical": "https://amg00405-rakutentv-cgtn-rakuten-i9tar.amagi.tv/master.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXyuyao3/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXyuyao3/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv2hd.m3u8?auth=test20251009",
-   "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv2hd.m3u8?auth=test20251009",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv15hd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv15hd",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=ssws",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=ssws",
-   "ipv6": false
-  },
-  {
-   "url": "http://45.153.96.44:8001",
-   "verdict": null,
-   "canonical": "http://45.153.96.44:8001",
-   "ipv6": false
-  },
-  {
-   "url": "http://ali-m-l.cztv.com/channels/lantian/channel006/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel006/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.cms.anhuinews.com/video/s10003-lbtv/index.m3u8",
-   "verdict": null,
-   "canonical": "http://live.cms.anhuinews.com/video/s10003-lbtv/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=jswshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=jswshd",
-   "ipv6": false
-  },
-  {
-   "url": "https://ali-m-l.cztv.com/channels/lantian/channel010/1080p.m3u8?",
-   "verdict": null,
-   "canonical": "https://ali-m-l.cztv.com/channels/lantian/channel010/1080p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://59.175.226.142:280/gb28181/xwzh.m3u8?zhubd",
-   "verdict": null,
-   "canonical": "http://59.175.226.142:280/gb28181/xwzh.m3u8?zhubd",
-   "ipv6": false
-  },
-  {
-   "url": "http://lxfile.lxxcb.cn/nmip-media/channellive/channel103799/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://lxfile.lxxcb.cn/nmip-media/channellive/channel103799/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXwencheng1/720p.m3u8?zzhed",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXwencheng1/720p.m3u8?zzhed",
-   "ipv6": false
-  },
-  {
-   "url": "https://l.cztvcloud.com/channels/lantian/SXxinchang1/720p.m3u8",
-   "verdict": null,
-   "canonical": "https://l.cztvcloud.com/channels/lantian/SXxinchang1/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv3hd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv3hd",
-   "ipv6": false
-  },
-  {
-   "url": "http://103.185.24.134:3001/NATGEO-HD/index.m3u8",
-   "verdict": null,
-   "canonical": "http://103.185.24.134:3001/NATGEO-HD/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv7hd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv7hd",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.yantaitv.cn/live/e50f104a4ffe4a41b2217cbda534146f/d86092e69df94668b33390278b061700-1.m3u8",
-   "verdict": null,
-   "canonical": "http://live.yantaitv.cn/live/e50f104a4ffe4a41b2217cbda534146f/d86092e69df94668b33390278b061700-1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://38.75.136.137:98/gslb/dsdqpub/hljwshd.m3u8?auth=testpub",
-   "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/hljwshd.m3u8?auth=testpub",
-   "ipv6": false
-  },
-  {
-   "url": "http://jrlive.jrntv.com/live/_definst_/jrxwzhs/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://jrlive.jrntv.com/live/_definst_/jrxwzhs/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://138.121.15.230:9002/NAT-GEO/index.m3u8",
-   "verdict": null,
-   "canonical": "http://138.121.15.230:9002/NAT-GEO/index.m3u8",
+   "canonical": "http://8.138.7.223/tv/cctv2.php",
    "ipv6": false
   },
   {
@@ -711,327 +207,111 @@
    "ipv6": false
   },
   {
-   "url": "http://ali-m-l.cztv.com/channels/lantian/channel03/1080p.m3u8",
+   "url": "http://tvfile.jyrmt.cn/nmip-media/channellive/channel104452/playlist.m3u8",
    "verdict": null,
-   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel03/1080p.m3u8",
+   "canonical": "http://tvfile.jyrmt.cn/nmip-media/channellive/channel104452/playlist.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://107.150.60.122/live/gxwshd.m3u8",
+   "url": "http://l.cztvcloud.com/channels/lantian/SXlanxi1/720p.m3u8",
    "verdict": null,
-   "canonical": "http://107.150.60.122/live/gxwshd.m3u8",
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXlanxi1/720p.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://107.150.60.122/live/lnwshd.m3u8",
+   "url": "https://jwcdnqx.hebyun.com.cn/live/qinghe1/1500k/tzwj_video.m3u8",
    "verdict": null,
-   "canonical": "http://107.150.60.122/live/lnwshd.m3u8",
+   "canonical": "https://jwcdnqx.hebyun.com.cn/live/qinghe1/1500k/tzwj_video.m3u8",
    "ipv6": false
   },
   {
-   "url": "https://txmov2.a.kwimgs.com/upic/2023/01/26/09/BMjAyMzAxMjYwOTE3NDVfNzM5MzQzNzIyXzk0NjI1OTUwNTA3XzBfMw==_b_B81ddda927d33445d544befd008e60109.mp4",
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000006658&livemode=1&stbId=YanG-1989",
    "verdict": null,
-   "canonical": "https://txmov2.a.kwimgs.com/upic/2023/01/26/09/BMjAyMzAxMjYwOTE3NDVfNzM5MzQzNzIyXzk0NjI1OTUwNTA3XzBfMw==_b_B81ddda927d33445d544befd008e60109.mp4",
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000006658&livemode=1&stbId=YanG-1989",
    "ipv6": false
   },
   {
-   "url": "http://live.dxhmt.cn:9081/tv/11481-4.m3u8",
+   "url": "http://139.203.180.9:90/live/zhxw.m3u8",
    "verdict": null,
-   "canonical": "http://live.dxhmt.cn:9081/tv/11481-4.m3u8",
+   "canonical": "http://139.203.180.9:90/live/zhxw.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://8.138.7.223/tv/cctvnews.php?id=cctv17",
+   "url": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel105549/playlist.m3u8",
    "verdict": null,
-   "canonical": "http://8.138.7.223/tv/cctvnews.php?id=cctv17",
+   "canonical": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel105549/playlist.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://124.116.183.146:9901/tsfile/live/0004_1.m3u8",
+   "url": "http://74.91.26.218:82/live/cctv1hd.m3u8",
    "verdict": null,
-   "canonical": "http://124.116.183.146:9901/tsfile/live/0004_1.m3u8",
+   "canonical": "http://74.91.26.218:82/live/cctv1hd.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://live.jinchuanrmt.com:90/live/jcxc.m3u8?zsicd",
+   "url": "http://event.pull.hebtv.com/live/live101.m3u8",
    "verdict": null,
-   "canonical": "http://live.jinchuanrmt.com:90/live/jcxc.m3u8?zsicd",
+   "canonical": "http://event.pull.hebtv.com/live/live101.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=zjwshd",
+   "url": "http://74.91.26.218:82/live/cctv3hd.m3u8",
    "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=zjwshd",
+   "canonical": "http://74.91.26.218:82/live/cctv3hd.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://play1-qk.nmtv.cn/live/1769652018126032.m3u8",
+   "url": "http://38.75.136.137:98/gslb/dsdqpub/cctv7hd.m3u8?auth=testpub",
    "verdict": null,
-   "canonical": "http://play1-qk.nmtv.cn/live/1769652018126032.m3u8",
+   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/cctv7hd.m3u8?auth=testpub",
    "ipv6": false
   },
   {
-   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000010129&livemode=1&stbId=YanG-1989",
+   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv9hd.m3u8?auth=test20251009",
    "verdict": null,
-   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000010129&livemode=1&stbId=YanG-1989",
+   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv9hd.m3u8?auth=test20251009",
    "ipv6": false
   },
   {
-   "url": "http://nklive.nbs.cn/hls/d511bc9d-a694-4453-b3a2-4fc842cc97a1/index.m3u8",
+   "url": "http://192.151.150.154/live/cctv17hd.m3u8",
    "verdict": null,
-   "canonical": "http://nklive.nbs.cn/hls/d511bc9d-a694-4453-b3a2-4fc842cc97a1/index.m3u8",
+   "canonical": "http://192.151.150.154/live/cctv17hd.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://38.75.136.137:98/gslb/dsdqpub/cctv8k.m3u8?auth=testpub",
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000005180&livemode=1&stbId=YanG-1989",
    "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/cctv8k.m3u8?auth=testpub",
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000005180&livemode=1&stbId=YanG-1989",
    "ipv6": false
   },
   {
-   "url": "http://zhpull.dxhmt.cn/jiaozuo/29b65b69130c4ef1a3283cc7b913da05/playlist.m3u8",
+   "url": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel104601/playlist.m3u8",
    "verdict": null,
-   "canonical": "http://zhpull.dxhmt.cn/jiaozuo/29b65b69130c4ef1a3283cc7b913da05/playlist.m3u8",
+   "canonical": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel104601/playlist.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://192.151.150.154/live/cctv6hd.m3u8",
+   "url": "http://74.91.26.218:82/live/cctv13hd.m3u8",
    "verdict": null,
-   "canonical": "http://192.151.150.154/live/cctv6hd.m3u8",
+   "canonical": "http://74.91.26.218:82/live/cctv13hd.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXdongtou1/720p.m3u8",
+   "url": "http://204.12.221.218:8181/3m1080p/cctv15.m3u8",
    "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXdongtou1/720p.m3u8",
+   "canonical": "http://204.12.221.218:8181/3m1080p/cctv15.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://tvpull.dxhmt.cn:9081/tv/10182-1.m3u8",
+   "url": "http://l.cztvcloud.com/channels/lantian/SXyuyao1/720p.m3u8",
    "verdict": null,
-   "canonical": "http://tvpull.dxhmt.cn:9081/tv/10182-1.m3u8",
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXyuyao1/720p.m3u8",
    "ipv6": false
   },
   {
-   "url": "http://38.75.136.137:98/gslb/dsdqpub/fyzq.m3u8?auth=testpub",
+   "url": "http://stream2.jlntv.cn/naxw/sd/live.m3u8",
    "verdict": null,
-   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/fyzq.m3u8?auth=testpub",
-   "ipv6": false
-  },
-  {
-   "url": "https://fastlive.cctvplus.com/out/v1/2b3d8a0c805d437f9dc85b764c2ac599/index.m3u8",
-   "verdict": null,
-   "canonical": "https://fastlive.cctvplus.com/out/v1/2b3d8a0c805d437f9dc85b764c2ac599/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://107.150.60.122/live/dnwshd.m3u8",
-   "verdict": null,
-   "canonical": "http://107.150.60.122/live/dnwshd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://www.dalitv.com.tw:4568/live/dali/index.m3u8",
-   "verdict": null,
-   "canonical": "http://www.dalitv.com.tw:4568/live/dali/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8",
-   "verdict": null,
-   "canonical": "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://92.114.85.87:8006/play/a00a/index.m3u8",
-   "verdict": null,
-   "canonical": "http://92.114.85.87:8006/play/a00a/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://bloomberg.com/media-manifest/streams/asia.m3u8",
-   "verdict": null,
-   "canonical": "https://bloomberg.com/media-manifest/streams/asia.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://m3u8.channel.luzhoubs.com/nmip-media/channellive/channel103074/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://m3u8.channel.luzhoubs.com/nmip-media/channellive/channel103074/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv1hd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv1hd",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXxiaoshan1/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXxiaoshan1/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://23.239.31.26:8989/animalplanet/index.m3u8",
-   "verdict": null,
-   "canonical": "http://23.239.31.26:8989/animalplanet/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://125.65.94.91:12351/live",
-   "verdict": null,
-   "canonical": "http://125.65.94.91:12351/live",
-   "ipv6": false
-  },
-  {
-   "url": "http://103.185.24.134:3001/NATGEO-WILD-HD/index.m3u8",
-   "verdict": null,
-   "canonical": "http://103.185.24.134:3001/NATGEO-WILD-HD/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://107.150.60.122/live/cctv14hd.m3u8",
-   "verdict": null,
-   "canonical": "http://107.150.60.122/live/cctv14hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv13hd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv13hd",
-   "ipv6": false
-  },
-  {
-   "url": "https://tvsen6.aynaott.com/foxnews/index.m3u8",
-   "verdict": null,
-   "canonical": "https://tvsen6.aynaott.com/foxnews/index.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://bp-livetytv.bestv.cn/ch/bestvdycj.m3u8",
-   "verdict": null,
-   "canonical": "http://bp-livetytv.bestv.cn/ch/bestvdycj.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://play.yunxya.com/channellive/xinwen.m3u8",
-   "verdict": null,
-   "canonical": "https://play.yunxya.com/channellive/xinwen.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream11.jlntv.cn/dehuitv/sd/live.m3u8",
-   "verdict": null,
-   "canonical": "http://stream11.jlntv.cn/dehuitv/sd/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream.hrbtv.net/yspd/sd/live.m3u8",
-   "verdict": null,
-   "canonical": "http://stream.hrbtv.net/yspd/sd/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=xzws",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=xzws",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv17hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv17hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXshengzhou1/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXshengzhou1/720p.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hnwshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hnwshd",
-   "ipv6": false
-  },
-  {
-   "url": "http://1yp7hc5p.live.sxmty.com/live/hls/bff8529922344209985b6e49baa9555a/efa2543628fc4a7ea93d3d6c975f77dc.m3u8",
-   "verdict": null,
-   "canonical": "http://1yp7hc5p.live.sxmty.com/live/hls/bff8529922344209985b6e49baa9555a/efa2543628fc4a7ea93d3d6c975f77dc.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://dash3.antik.sk/live/test_cgtn_arb_tizen/playlist.m3u8",
-   "verdict": null,
-   "canonical": "https://dash3.antik.sk/live/test_cgtn_arb_tizen/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream4.jlntv.cn/mhk/sd/live.m3u8",
-   "verdict": null,
-   "canonical": "http://stream4.jlntv.cn/mhk/sd/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXqingyuan1/720p.m3u8?fbl=",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXqingyuan1/720p.m3u8?fbl=",
-   "ipv6": false
-  },
-  {
-   "url": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel100999/playlist.m3u8",
-   "verdict": null,
-   "canonical": "https://m3u8.channel.dzsm.com/nmip-media/channellive/channel100999/playlist.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://124.152.34.102:8030/wCMq71/wCMq71_0.m3u8",
-   "verdict": null,
-   "canonical": "http://124.152.34.102:8030/wCMq71/wCMq71_0.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://live.yantaitv.cn/live/27f84144e95a4652ae9e5c211b2a6b55/405f3e33ba384aa0a16014d0becd1261-1.m3u8",
-   "verdict": null,
-   "canonical": "http://live.yantaitv.cn/live/27f84144e95a4652ae9e5c211b2a6b55/405f3e33ba384aa0a16014d0becd1261-1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://stream2.jlntv.cn/jilin1/sd/live.m3u8",
-   "verdict": null,
-   "canonical": "http://stream2.jlntv.cn/jilin1/sd/live.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://124.116.183.146:9901/tsfile/live/0005_1.m3u8",
-   "verdict": null,
-   "canonical": "http://124.116.183.146:9901/tsfile/live/0005_1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://74.91.26.218:82/live/cctv15hd.m3u8",
-   "verdict": null,
-   "canonical": "http://74.91.26.218:82/live/cctv15hd.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://play.jinnantv.top/live/JNTV1.m3u8",
-   "verdict": null,
-   "canonical": "http://play.jinnantv.top/live/JNTV1.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=sxwshd",
-   "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=sxwshd",
-   "ipv6": false
-  },
-  {
-   "url": "https://thinkkast.dpdns.org/thinkkast/bbcworld_news_sd/versiglia/index.m3u8",
-   "verdict": null,
-   "canonical": "https://thinkkast.dpdns.org/thinkkast/bbcworld_news_sd/versiglia/index.m3u8",
+   "canonical": "http://stream2.jlntv.cn/naxw/sd/live.m3u8",
    "ipv6": false
   },
   {
@@ -1041,15 +321,39 @@
    "ipv6": false
   },
   {
-   "url": "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225613/index.m3u8",
+   "url": "https://amg00405-rakutentv-cgtn-rakuten-i9tar.amagi.tv/master.m3u8",
    "verdict": null,
-   "canonical": "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225613/index.m3u8",
-   "ipv6": true
+   "canonical": "https://amg00405-rakutentv-cgtn-rakuten-i9tar.amagi.tv/master.m3u8",
+   "ipv6": false
   },
   {
-   "url": "http://46.32.176.50/bbcworld/index.m3u8",
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=tjwshd",
    "verdict": null,
-   "canonical": "http://46.32.176.50/bbcworld/index.m3u8",
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=tjwshd",
+   "ipv6": false
+  },
+  {
+   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv17hd.m3u8?auth=test20251009",
+   "verdict": null,
+   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv17hd.m3u8?auth=test20251009",
+   "ipv6": false
+  },
+  {
+   "url": "http://192.151.150.154/live/cctv7hd.m3u8",
+   "verdict": null,
+   "canonical": "http://192.151.150.154/live/cctv7hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://198.204.228.26/live/cctv16hd.m3u8",
+   "verdict": null,
+   "canonical": "http://198.204.228.26/live/cctv16hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv7hd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv7hd",
    "ipv6": false
   },
   {
@@ -1059,9 +363,669 @@
    "ipv6": false
   },
   {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8",
+   "url": "http://38.75.136.137:98/gslb/dsdqpub/zjwshd.m3u8?auth=testpub",
    "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8",
+   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/zjwshd.m3u8?auth=testpub",
+   "ipv6": false
+  },
+  {
+   "url": "https://live.gdtv.ah.cn/live/newsTV.m3u8",
+   "verdict": null,
+   "canonical": "https://live.gdtv.ah.cn/live/newsTV.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://198.204.228.26/live/cctv2hd.m3u8",
+   "verdict": null,
+   "canonical": "http://198.204.228.26/live/cctv2hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.yantaitv.cn/live/e50f104a4ffe4a41b2217cbda534146f/d86092e69df94668b33390278b061700-1.m3u8",
+   "verdict": null,
+   "canonical": "http://live.yantaitv.cn/live/e50f104a4ffe4a41b2217cbda534146f/d86092e69df94668b33390278b061700-1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream2.jlntv.cn/tonghua1/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream2.jlntv.cn/tonghua1/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv15hd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv15hd",
+   "ipv6": false
+  },
+  {
+   "url": "https://streaming.aurora.enhanced.live/live/mpc/enl0eG1mLmVncmVzcy5mZDJ2eHI=/out/v1/IT_SIMULCAST/DISCOVERYCHANNEL/CMAF/index.m3u8",
+   "verdict": null,
+   "canonical": "https://streaming.aurora.enhanced.live/live/mpc/enl0eG1mLmVncmVzcy5mZDJ2eHI=/out/v1/IT_SIMULCAST/DISCOVERYCHANNEL/CMAF/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://bztv.tvbus.cc:8081/cdnlive/cctv14.m3u8",
+   "verdict": null,
+   "canonical": "http://bztv.tvbus.cc:8081/cdnlive/cctv14.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXpinghu1/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXpinghu1/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://46.32.176.50/NationalGeographicHD/index.m3u8",
+   "verdict": null,
+   "canonical": "http://46.32.176.50/NationalGeographicHD/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://124.116.183.146:9901/tsfile/live/0012_1.m3u8",
+   "verdict": null,
+   "canonical": "http://124.116.183.146:9901/tsfile/live/0012_1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://107.150.60.122/live/cctv14hd.m3u8",
+   "verdict": null,
+   "canonical": "http://107.150.60.122/live/cctv14hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://198.204.228.26/live/nxws.m3u8",
+   "verdict": null,
+   "canonical": "http://198.204.228.26/live/nxws.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.iwcmt.cn:90/live/zhxw.m3u8",
+   "verdict": null,
+   "canonical": "http://live.iwcmt.cn:90/live/zhxw.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://192.151.150.154/live/cctv13hd.m3u8",
+   "verdict": null,
+   "canonical": "http://192.151.150.154/live/cctv13hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://zb.gxlbamc.com:1935/live/lbzh.stream/playlist.m3u8",
+   "verdict": null,
+   "canonical": "http://zb.gxlbamc.com:1935/live/lbzh.stream/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://play.kankanlive.com/live/1720583434627241.m3u8",
+   "verdict": null,
+   "canonical": "http://play.kankanlive.com/live/1720583434627241.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=gzwshd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=gzwshd",
+   "ipv6": false
+  },
+  {
+   "url": "http://8.138.7.223/tv/cctvnews.php?id=cctv2",
+   "verdict": null,
+   "canonical": "http://8.138.7.223/tv/cctvnews.php?id=cctv2",
+   "ipv6": false
+  },
+  {
+   "url": "https://event.pull.hebtv.com:443/live/live101.m3u8",
+   "verdict": null,
+   "canonical": "https://event.pull.hebtv.com/live/live101.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hljwshd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hljwshd",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream2.jlntv.cn/qg/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream2.jlntv.cn/qg/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXsongyang1/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXsongyang1/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.shaoxing.com.cn/video/s10001-sxtv2/index.m3u8?%E5%85%B3%E6%B3%A8%E5%BE%AE%E4%BF%A1%E5%85%AC%E4%BC%97%E5%8F%B7[%E6%99%B4%E5%9B%AD]",
+   "verdict": null,
+   "canonical": "http://live.shaoxing.com.cn/video/s10001-sxtv2/index.m3u8?关注微信公众号[晴园]",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv4k",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv4k",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXqujiang1/720p.m3u8?zzhed",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXqujiang1/720p.m3u8?zzhed",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.yantaitv.cn/live/e9f1d9045d474c31884d13fa4ffbbd16/a4a9b3704d854756907845107cc56129-1.m3u8",
+   "verdict": null,
+   "canonical": "http://live.yantaitv.cn/live/e9f1d9045d474c31884d13fa4ffbbd16/a4a9b3704d854756907845107cc56129-1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://222.179.155.21:1935/ch1.m3u8",
+   "verdict": null,
+   "canonical": "http://222.179.155.21:1935/ch1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://live.wjyanghu.com/live/CH1.m3u8",
+   "verdict": null,
+   "canonical": "https://live.wjyanghu.com/live/CH1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000028638&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000028638&livemode=1&stbId=YanG-1989",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream.mcquack.net/114/index.m3u8",
+   "verdict": null,
+   "canonical": "http://stream.mcquack.net/114/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://74.91.26.218:82/live/cctv5hd.m3u8",
+   "verdict": null,
+   "canonical": "http://74.91.26.218:82/live/cctv5hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXyuhang3/720p.m3u8?zzhed",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXyuhang3/720p.m3u8?zzhed",
+   "ipv6": false
+  },
+  {
+   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv4k.m3u8?auth=test20251009",
+   "verdict": null,
+   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv4k.m3u8?auth=test20251009",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream10.jlntv.cn/jiutaitv/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream10.jlntv.cn/jiutaitv/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://flash1.bogulus1.cfd/wild/usergenr9qsi5gt.m3u8",
+   "verdict": null,
+   "canonical": "https://flash1.bogulus1.cfd/wild/usergenr9qsi5gt.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://zhpull.dxhmt.cn/jiaozuo/29b65b69130c4ef1a3283cc7b913da05/playlist.m3u8",
+   "verdict": null,
+   "canonical": "http://zhpull.dxhmt.cn/jiaozuo/29b65b69130c4ef1a3283cc7b913da05/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXshengzhou1/720p.m3u8?zzhed#http://l.cztvcloud.com/channels/lantian/SXshengzhou1/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXshengzhou1/720p.m3u8?zzhed",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=jlwshd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=jlwshd",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn:80/1.m3u8?channel-id=FifastbLive&Contentid=3000000010000005180&livemode=1&stbId=yu&mode=1",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/1.m3u8?channel-id=FifastbLive&Contentid=3000000010000005180&livemode=1&stbId=yu&mode=1",
+   "ipv6": false
+  },
+  {
+   "url": "http://8.138.7.223/tv/api.php?id=cctv5p",
+   "verdict": null,
+   "canonical": "http://8.138.7.223/tv/api.php?id=cctv5p",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011522&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011522&livemode=1&stbId=YanG-1989",
+   "ipv6": false
+  },
+  {
+   "url": "http://hzcm-live.media.hugd.com/613c47f0ab0d4eaa98b21378d0db6ded/0051d31c9dd543a7825eea4e49675b2a.m3u8?auth_key=2277598059-0a5ebfa1c0dc4671b42a60810fc37039-0-fa625b7d1feab612062453c12e3c8887",
+   "verdict": null,
+   "canonical": "http://hzcm-live.media.hugd.com/613c47f0ab0d4eaa98b21378d0db6ded/0051d31c9dd543a7825eea4e49675b2a.m3u8?auth_key=2277598059-0a5ebfa1c0dc4671b42a60810fc37039-0-fa625b7d1feab612062453c12e3c8887",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv12hd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv12hd",
+   "ipv6": false
+  },
+  {
+   "url": "http://192.151.150.154/live/cctv3hd.m3u8",
+   "verdict": null,
+   "canonical": "http://192.151.150.154/live/cctv3hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000010833&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000010833&livemode=1&stbId=YanG-1989",
+   "ipv6": false
+  },
+  {
+   "url": "http://192.151.150.154/live/cctv4k.m3u8",
+   "verdict": null,
+   "canonical": "http://192.151.150.154/live/cctv4k.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://107.150.60.122/live/cctv5p.m3u8",
+   "verdict": null,
+   "canonical": "http://107.150.60.122/live/cctv5p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://107.150.60.122/live/cctv5hd.m3u8",
+   "verdict": null,
+   "canonical": "http://107.150.60.122/live/cctv5hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream2.jlntv.cn/baicheng1/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream2.jlntv.cn/baicheng1/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hbwshd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hbwshd",
+   "ipv6": false
+  },
+  {
+   "url": "http://dspdhls.appcoo.com:8888/live/dspd/index.m3u8",
+   "verdict": null,
+   "canonical": "http://dspdhls.appcoo.com:8888/live/dspd/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://198.204.228.26/live/cctv4hd.m3u8",
+   "verdict": null,
+   "canonical": "http://198.204.228.26/live/cctv4hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://radiovid.foxnews.com/hls/live/661547/RADIOVID/index.m3u8",
+   "verdict": null,
+   "canonical": "https://radiovid.foxnews.com/hls/live/661547/RADIOVID/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.cms.anhuinews.com/video/s10003-lbtv/index.m3u8",
+   "verdict": null,
+   "canonical": "http://live.cms.anhuinews.com/video/s10003-lbtv/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011520&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011520&livemode=1&stbId=YanG-1989",
+   "ipv6": false
+  },
+  {
+   "url": "https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8",
+   "verdict": null,
+   "canonical": "https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://88.212.15.17/live/discovery_hungary/index.m3u8",
+   "verdict": null,
+   "canonical": "http://88.212.15.17/live/discovery_hungary/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011519&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011519&livemode=1&stbId=YanG-1989",
+   "ipv6": false
+  },
+  {
+   "url": "http://d2e1asnsl7br7b.cloudfront.net/7782e205e72f43aeb4a48ec97f66ebbe/index_5.m3u8?zshijd",
+   "verdict": null,
+   "canonical": "http://d2e1asnsl7br7b.cloudfront.net/7782e205e72f43aeb4a48ec97f66ebbe/index_5.m3u8?zshijd",
+   "ipv6": false
+  },
+  {
+   "url": "http://88.212.15.17/live/ngw_hun/index.m3u8",
+   "verdict": null,
+   "canonical": "http://88.212.15.17/live/ngw_hun/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://38.75.136.137:98/gslb/dsdqbv/cctv4hd.m3u8?auth=test20251009",
+   "verdict": null,
+   "canonical": "http://38.75.136.137:98/gslb/dsdqbv/cctv4hd.m3u8?auth=test20251009",
+   "ipv6": false
+  },
+  {
+   "url": "https://m3u8channel-bx.yunxya.com/nmip-media/channellive/channel104666/playlist.m3u8",
+   "verdict": null,
+   "canonical": "https://m3u8channel-bx.yunxya.com/nmip-media/channellive/channel104666/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv1hd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv1hd",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream10.jlntv.cn/yongji/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream10.jlntv.cn/yongji/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://88.212.15.17/live/animal_hun/index.m3u8",
+   "verdict": null,
+   "canonical": "http://88.212.15.17/live/animal_hun/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://61.216.67.119:1935/bltvhd/bltv1/chunklist_w1266569526.m3u8",
+   "verdict": null,
+   "canonical": "http://61.216.67.119:1935/bltvhd/bltv1/chunklist_w1266569526.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://92.114.85.87:8006/play/a00a/index.m3u8",
+   "verdict": null,
+   "canonical": "http://92.114.85.87:8006/play/a00a/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://74.91.26.218:82/live/cctv11hd.m3u8",
+   "verdict": null,
+   "canonical": "http://74.91.26.218:82/live/cctv11hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://74.91.26.218:82/live/cctv9hd.m3u8",
+   "verdict": null,
+   "canonical": "http://74.91.26.218:82/live/cctv9hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream.jinjiang.tv/1/sd/live.m3u8?zfud",
+   "verdict": null,
+   "canonical": "http://stream.jinjiang.tv/1/sd/live.m3u8?zfud",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream2.jlntv.cn/sytv/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream2.jlntv.cn/sytv/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://m3u8.channel.luzhoubs.com/nmip-media/channellive/channel103074/playlist.m3u8",
+   "verdict": null,
+   "canonical": "http://m3u8.channel.luzhoubs.com/nmip-media/channellive/channel103074/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://222.179.42.129:8181/hls1.m3u8",
+   "verdict": null,
+   "canonical": "http://222.179.42.129:8181/hls1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://jwcdnqx.hebyun.com.cn/live/hdgg/1500k/tzwj_video.m3u8",
+   "verdict": null,
+   "canonical": "https://jwcdnqx.hebyun.com.cn/live/hdgg/1500k/tzwj_video.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://stream2.jlntv.cn/jilin1/sd/live.m3u8",
+   "verdict": null,
+   "canonical": "http://stream2.jlntv.cn/jilin1/sd/live.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://38.75.136.137:98/gslb/dsdqpub/ahwshd.m3u8?auth=testpub",
+   "verdict": null,
+   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/ahwshd.m3u8?auth=testpub",
+   "ipv6": false
+  },
+  {
+   "url": "http://8.138.7.223/tv/cctvnews.php?id=cctv12",
+   "verdict": null,
+   "canonical": "http://8.138.7.223/tv/cctvnews.php?id=cctv12",
+   "ipv6": false
+  },
+  {
+   "url": "https://cdn-euronews.akamaized.net/live/eds/euronews-pl/26382/index.m3u8",
+   "verdict": null,
+   "canonical": "https://cdn-euronews.akamaized.net/live/eds/euronews-pl/26382/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cqwshd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cqwshd",
+   "ipv6": false
+  },
+  {
+   "url": "http://qcfile.qcrmt.com/nmip-media/channellive/channel100933/playlist.m3u8",
+   "verdict": null,
+   "canonical": "http://qcfile.qcrmt.com/nmip-media/channellive/channel100933/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://218.84.12.186:8001/hls/main/playlist.m3u8",
+   "verdict": null,
+   "canonical": "http://218.84.12.186:8001/hls/main/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://222.128.55.152:9080/live/dwq.m3u8",
+   "verdict": null,
+   "canonical": "http://222.128.55.152:9080/live/dwq.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://218.31.201.189:9000/api/material/local/mnt/shiping1/prog_index.m3u8",
+   "verdict": null,
+   "canonical": "http://218.31.201.189:9000/api/material/local/mnt/shiping1/prog_index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.jinchuanrmt.com:90/live/jcxc.m3u8",
+   "verdict": null,
+   "canonical": "http://live.jinchuanrmt.com:90/live/jcxc.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://74.91.26.218:82/live/cctv16hd.m3u8",
+   "verdict": null,
+   "canonical": "http://74.91.26.218:82/live/cctv16hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://jwcdnqx.hebyun.com.cn/live/qxtvlive1/1500k/tzwj_video.m3u8",
+   "verdict": null,
+   "canonical": "https://jwcdnqx.hebyun.com.cn/live/qxtvlive1/1500k/tzwj_video.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://3gvod.zjgonline.com.cn:1935/live/_definst_/shehuishenghuo_app/chunklist.m3u8",
+   "verdict": null,
+   "canonical": "http://3gvod.zjgonline.com.cn:1935/live/_definst_/shehuishenghuo_app/chunklist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://play.kankanlive.com/live/1656487214793905.m3u8",
+   "verdict": null,
+   "canonical": "https://play.kankanlive.com/live/1656487214793905.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000008176&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000008176&livemode=1&stbId=YanG-1989",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXyuyao3/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXyuyao3/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://jwcdnqx.hebyun.com.cn/live/rqtv1/1500k/tzwj_video.m3u8",
+   "verdict": null,
+   "canonical": "https://jwcdnqx.hebyun.com.cn/live/rqtv1/1500k/tzwj_video.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://107.150.60.122/live/cctv4hd.m3u8",
+   "verdict": null,
+   "canonical": "http://107.150.60.122/live/cctv4hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv11hd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv11hd",
+   "ipv6": false
+  },
+  {
+   "url": "http://gmxw.7766.org:808/hls/45/index.m3u8",
+   "verdict": null,
+   "canonical": "http://gmxw.7766.org:808/hls/45/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://223.78.65.165:9901/tsfile/live/0006_1.m3u8?key=txiptv&playlive=1&authid=0",
+   "verdict": null,
+   "canonical": "http://223.78.65.165:9901/tsfile/live/0006_1.m3u8?key=txiptv&playlive=1&authid=0",
+   "ipv6": false
+  },
+  {
+   "url": "https://thinkkast.dpdns.org/thinkkast/bbcworld_news_sd/versiglia/index.m3u8",
+   "verdict": null,
+   "canonical": "https://thinkkast.dpdns.org/thinkkast/bbcworld_news_sd/versiglia/index.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://0472.org/hls/cgtn.m3u8",
+   "verdict": null,
+   "canonical": "https://0472.org/hls/cgtn.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://dash3.antik.sk/live/test_cgtn_arb_tizen/playlist.m3u8",
+   "verdict": null,
+   "canonical": "https://dash3.antik.sk/live/test_cgtn_arb_tizen/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://r.jdshipin.com/n90gt",
+   "verdict": null,
+   "canonical": "http://r.jdshipin.com/n90gt",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hawshd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=hawshd",
+   "ipv6": false
+  },
+  {
+   "url": "https://jwcdnqx.hebyun.com.cn/live/SXTV1/1500k/tzwj_video.m3u8",
+   "verdict": null,
+   "canonical": "https://jwcdnqx.hebyun.com.cn/live/SXTV1/1500k/tzwj_video.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXputuo1/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXputuo1/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://l.cztvcloud.com/channels/lantian/SXputuo1/720p.m3u8",
+   "verdict": null,
+   "canonical": "https://l.cztvcloud.com/channels/lantian/SXputuo1/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv6hd",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv6hd",
+   "ipv6": false
+  },
+  {
+   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv8k",
+   "verdict": null,
+   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv8k",
+   "ipv6": false
+  },
+  {
+   "url": "http://hbzqdb.chinashadt.com:1937/live/zqzh.stream_360p/playlist.m3u8",
+   "verdict": null,
+   "canonical": "http://hbzqdb.chinashadt.com:1937/live/zqzh.stream_360p/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXqingyuan1/720p.m3u8?fbl=",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXqingyuan1/720p.m3u8?fbl=",
+   "ipv6": false
+  },
+  {
+   "url": "http://38.75.136.137:98/gslb/dsdqpub/jlwshd.m3u8?auth=testpub",
+   "verdict": null,
+   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/jlwshd.m3u8?auth=testpub",
+   "ipv6": false
+  },
+  {
+   "url": "https://d3bp6dwmpbdajl.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-ury0meh5m4nzm/index.m3u8",
+   "verdict": null,
+   "canonical": "https://d3bp6dwmpbdajl.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-ury0meh5m4nzm/index.m3u8",
    "ipv6": false
   },
   {
@@ -1071,15 +1035,45 @@
    "ipv6": false
   },
   {
-   "url": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv9hd",
+   "url": "http://liveout.btzx.com.cn/62ds9e/4nxdih.m3u8?fbl=",
    "verdict": null,
-   "canonical": "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv9hd",
+   "canonical": "http://liveout.btzx.com.cn/62ds9e/4nxdih.m3u8?fbl=",
    "ipv6": false
   },
   {
-   "url": "http://gmxw.7766.org:808/hls/40/index.m3u8",
+   "url": "http://218.84.127.245:1026/hls/main1/playlist.m3u8?zxinjd,",
    "verdict": null,
-   "canonical": "http://gmxw.7766.org:808/hls/40/index.m3u8",
+   "canonical": "http://218.84.127.245:1026/hls/main1/playlist.m3u8?zxinjd,",
+   "ipv6": false
+  },
+  {
+   "url": "http://198.204.228.26/live/cctv3hd.m3u8",
+   "verdict": null,
+   "canonical": "http://198.204.228.26/live/cctv3hd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://amg01644-amg01644c1-amgplt0343.playout.now3.amagi.tv/ts-eu-w1-n2/playlist/amg01644-amg01644c1-amgplt0343/playlist.m3u8",
+   "verdict": null,
+   "canonical": "https://amg01644-amg01644c1-amgplt0343.playout.now3.amagi.tv/ts-eu-w1-n2/playlist/amg01644-amg01644c1-amgplt0343/playlist.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://38.75.136.137:98/gslb/dsdqpub/hawshd.m3u8?auth=testpub",
+   "verdict": null,
+   "canonical": "http://38.75.136.137:98/gslb/dsdqpub/hawshd.m3u8?auth=testpub",
+   "ipv6": false
+  },
+  {
+   "url": "http://l.cztvcloud.com/channels/lantian/SXwencheng1/720p.m3u8?zzhed",
+   "verdict": null,
+   "canonical": "http://l.cztvcloud.com/channels/lantian/SXwencheng1/720p.m3u8?zzhed",
+   "ipv6": false
+  },
+  {
+   "url": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000005308&livemode=1&stbId=YanG-1989",
+   "verdict": null,
+   "canonical": "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000005308&livemode=1&stbId=YanG-1989",
    "ipv6": false
   },
   {
@@ -1659,6 +1653,12 @@
    "ipv6": false
   },
   {
+   "url": "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd",
+   "verdict": null,
+   "canonical": "http://218.84.12.186:8001/hls/main/playlist.m3u8?zxinjd;http://218.84.12.186:8001/hls/main/playlist.m3u8zxinjd",
+   "ipv6": false
+  },
+  {
    "url": "http://218.84.12.186:8002/hls/main/playlist.m3u8",
    "verdict": null,
    "canonical": "http://218.84.12.186:8002/hls/main/playlist.m3u8",
@@ -1863,6 +1863,12 @@
    "ipv6": false
   },
   {
+   "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221225645/index.m3u8",
+   "verdict": null,
+   "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221225645/index.m3u8",
+   "ipv6": false
+  },
+  {
    "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221225657/index.m3u8",
    "verdict": null,
    "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221225657/index.m3u8",
@@ -1995,12 +2001,6 @@
    "ipv6": false
   },
   {
-   "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221225725/index.m3u8",
-   "verdict": null,
-   "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221225725/index.m3u8",
-   "ipv6": false
-  },
-  {
    "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221225726/index.m3u8",
    "verdict": null,
    "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221225726/index.m3u8",
@@ -2097,9 +2097,9 @@
    "ipv6": false
   },
   {
-   "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221226195/index.m3u8",
+   "url": "http://39.135.138.58:18890/PLTV/88888888/224/3221225747/index.m3u8",
    "verdict": null,
-   "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221226195/index.m3u8",
+   "canonical": "http://39.135.138.58:18890/PLTV/88888888/224/3221225747/index.m3u8",
    "ipv6": false
   },
   {
@@ -2547,6 +2547,12 @@
    "ipv6": false
   },
   {
+   "url": "http://8.138.7.223/tv/api.php?id=cctv2",
+   "verdict": null,
+   "canonical": "http://8.138.7.223/tv/api.php?id=cctv2",
+   "ipv6": false
+  },
+  {
    "url": "http://8.138.7.223/tv/cctvnews.php?id=cctv11",
    "verdict": null,
    "canonical": "http://8.138.7.223/tv/cctvnews.php?id=cctv11",
@@ -2611,6 +2617,66 @@
    "verdict": null,
    "canonical": "http://88.212.15.17/live/bbce_hun/index.m3u8",
    "ipv6": false
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4001]/PLTV/88888888/224/3221225655/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4001]/PLTV/88888888/224/3221225655/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225613/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225613/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225651/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225651/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4011]/PLTV/88888888/224/3221225643/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4011]/PLTV/88888888/224/3221225643/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4014]/PLTV/88888888/224/3221225617/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4014]/PLTV/88888888/224/3221225617/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225639/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225639/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225641/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225641/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4017]/PLTV/88888888/224/3221225619/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4017]/PLTV/88888888/224/3221225619/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4023]/PLTV/88888888/224/3221225611/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4023]/PLTV/88888888/224/3221225611/index.m3u8",
+   "ipv6": true
+  },
+  {
+   "url": "http://[2409:8087:1a01:df::4058]/PLTV/88888888/224/3221225620/index.m3u8",
+   "verdict": null,
+   "canonical": "http://[2409:8087:1a01:df::4058]/PLTV/88888888/224/3221225620/index.m3u8",
+   "ipv6": true
   },
   {
    "url": "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001013/index.m3u8",
@@ -2697,9 +2763,9 @@
    "ipv6": true
   },
   {
-   "url": "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001065/index.m3u8",
+   "url": "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001058/index.m3u8",
    "verdict": null,
-   "canonical": "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001065/index.m3u8",
+   "canonical": "http://[2409:8087:1e03:21::2]:6060/cms001/ch00000090990000001058/index.m3u8",
    "ipv6": true
   },
   {
@@ -2967,9 +3033,57 @@
    "ipv6": false
   },
   {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel003/1080p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel003/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel004/1080p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel004/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel006/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel006/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel007/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel007/720p.m3u8",
+   "ipv6": false
+  },
+  {
    "url": "http://ali-m-l.cztv.com/channels/lantian/channel009/1080p.m3u8",
    "verdict": null,
    "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel009/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel02/1080p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel02/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel03/1080p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel03/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel04/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel04/720p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://ali-m-l.cztv.com/channels/lantian/channel12/720p.m3u8",
+   "verdict": null,
+   "canonical": "http://ali-m-l.cztv.com/channels/lantian/channel12/720p.m3u8",
    "ipv6": false
   },
   {
@@ -3012,6 +3126,12 @@
    "url": "http://bp-livetytv.bestv.cn/ch/bestvdspd.m3u8",
    "verdict": null,
    "canonical": "http://bp-livetytv.bestv.cn/ch/bestvdspd.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://bp-livetytv.bestv.cn/ch/bestvdycj.m3u8",
+   "verdict": null,
+   "canonical": "http://bp-livetytv.bestv.cn/ch/bestvdycj.m3u8",
    "ipv6": false
   },
   {
@@ -4047,6 +4167,12 @@
    "ipv6": false
   },
   {
+   "url": "http://httplive.slave.bfgd.com.cn:14311/playurl?playtype=live&protocol=http&accesstoken=R5F2408FEU3198804BK78052214IE73560DFP2BF4M340CE68V0Z339CBW1626D4D261E46FEA&playtoken=ABCDEFGH&programid=4200000068",
+   "verdict": null,
+   "canonical": "http://httplive.slave.bfgd.com.cn:14311/playurl?playtype=live&protocol=http&accesstoken=R5F2408FEU3198804BK78052214IE73560DFP2BF4M340CE68V0Z339CBW1626D4D261E46FEA&playtoken=ABCDEFGH&programid=4200000068",
+   "ipv6": false
+  },
+  {
    "url": "http://huaiyin-tv-hls.cm.jstv.com/huaiyin-tv/huaiyinf.m3u8",
    "verdict": null,
    "canonical": "http://huaiyin-tv-hls.cm.jstv.com/huaiyin-tv/huaiyinf.m3u8",
@@ -4707,21 +4833,9 @@
    "ipv6": false
   },
   {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8",
-   "ipv6": false
-  },
-  {
    "url": "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8?zzhed",
    "verdict": null,
    "canonical": "http://l.cztvcloud.com/channels/lantian/SXshangyu1/720p.m3u8?zzhed",
-   "ipv6": false
-  },
-  {
-   "url": "http://l.cztvcloud.com/channels/lantian/SXshangyu3/720p.m3u8",
-   "verdict": null,
-   "canonical": "http://l.cztvcloud.com/channels/lantian/SXshangyu3/720p.m3u8",
    "ipv6": false
   },
   {
@@ -4857,6 +4971,36 @@
    "ipv6": false
   },
   {
+   "url": "http://live.dxhmt.cn:9081/tv/10106-1.m3u8",
+   "verdict": null,
+   "canonical": "http://live.dxhmt.cn:9081/tv/10106-1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.dxhmt.cn:9081/tv/10726-1.m3u8",
+   "verdict": null,
+   "canonical": "http://live.dxhmt.cn:9081/tv/10726-1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.dxhmt.cn:9081/tv/11329-1.m3u8",
+   "verdict": null,
+   "canonical": "http://live.dxhmt.cn:9081/tv/11329-1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.dxhmt.cn:9081/tv/11481-1.m3u8",
+   "verdict": null,
+   "canonical": "http://live.dxhmt.cn:9081/tv/11481-1.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.dxhmt.cn:9081/tv/11481-4.m3u8",
+   "verdict": null,
+   "canonical": "http://live.dxhmt.cn:9081/tv/11481-4.m3u8",
+   "ipv6": false
+  },
+  {
    "url": "http://live.erdszs.org.cn/lsdream/3lZr8dK/1000/live.m3u8",
    "verdict": null,
    "canonical": "http://live.erdszs.org.cn/lsdream/3lZr8dK/1000/live.m3u8",
@@ -4944,6 +5088,12 @@
    "url": "http://live.hnxttv.com:9601/live/dspd/800K/tzwj_video.m3u8",
    "verdict": null,
    "canonical": "http://live.hnxttv.com:9601/live/dspd/800K/tzwj_video.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "http://live.hyxrmt.com:85/live/xwpd.m3u8",
+   "verdict": null,
+   "canonical": "http://live.hyxrmt.com:85/live/xwpd.m3u8",
    "ipv6": false
   },
   {
@@ -6639,12 +6789,6 @@
    "ipv6": false
   },
   {
-   "url": "http://test5.btzx.com.cn/live/kkdl.stream/playlist.m3u8",
-   "verdict": null,
-   "canonical": "http://test5.btzx.com.cn/live/kkdl.stream/playlist.m3u8",
-   "ipv6": false
-  },
-  {
    "url": "http://traffic.jbh.tjbh.com/live/bhtv1/playlist.m3u8",
    "verdict": null,
    "canonical": "http://traffic.jbh.tjbh.com/live/bhtv1/playlist.m3u8",
@@ -7581,6 +7725,36 @@
    "ipv6": false
   },
   {
+   "url": "https://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8",
+   "verdict": null,
+   "canonical": "https://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://ali-m-l.cztv.com/channels/lantian/channel003/1080p.m3u8",
+   "verdict": null,
+   "canonical": "https://ali-m-l.cztv.com/channels/lantian/channel003/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://ali-m-l.cztv.com/channels/lantian/channel006/1080p.m3u8",
+   "verdict": null,
+   "canonical": "https://ali-m-l.cztv.com/channels/lantian/channel006/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://ali-m-l.cztv.com/channels/lantian/channel007/1080p.m3u8",
+   "verdict": null,
+   "canonical": "https://ali-m-l.cztv.com/channels/lantian/channel007/1080p.m3u8",
+   "ipv6": false
+  },
+  {
+   "url": "https://ali-m-l.cztv.com/channels/lantian/channel010/1080p.m3u8",
+   "verdict": null,
+   "canonical": "https://ali-m-l.cztv.com/channels/lantian/channel010/1080p.m3u8",
+   "ipv6": false
+  },
+  {
    "url": "https://alwasattv.hibridcdn.net/alwasattv/alwasat_abr/playlist.m3u8",
    "verdict": null,
    "canonical": "https://alwasattv.hibridcdn.net/alwasattv/alwasat_abr/playlist.m3u8",
@@ -7857,6 +8031,12 @@
    "ipv6": false
   },
   {
+   "url": "https://espanol-livews.cgtn.com/hls/LSveOGBaBw41Ea7ukkVAUdKQ220802LSTexu6xAuFH8VZNBLE1ZNEa220802cd/playlist.m3u8",
+   "verdict": null,
+   "canonical": "https://espanol-livews.cgtn.com/hls/LSveOGBaBw41Ea7ukkVAUdKQ220802LSTexu6xAuFH8VZNBLE1ZNEa220802cd/playlist.m3u8",
+   "ipv6": false
+  },
+  {
    "url": "https://freem3u.xyz/api/live/play.m3u8?vid=106",
    "verdict": null,
    "canonical": "https://freem3u.xyz/api/live/play.m3u8?vid=106",
@@ -8040,24 +8220,6 @@
    "url": "https://jwcdnqx.hebyun.com.cn/live/cdsxwzhtv/1500k/tzwj_video.m3u8",
    "verdict": null,
    "canonical": "https://jwcdnqx.hebyun.com.cn/live/cdsxwzhtv/1500k/tzwj_video.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://jwcdnqx.hebyun.com.cn/live/hdgg/1500k/tzwj_video.m3u8",
-   "verdict": null,
-   "canonical": "https://jwcdnqx.hebyun.com.cn/live/hdgg/1500k/tzwj_video.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://jwcdnqx.hebyun.com.cn/live/hdkj/1500k/tzwj_video.m3u8",
-   "verdict": null,
-   "canonical": "https://jwcdnqx.hebyun.com.cn/live/hdkj/1500k/tzwj_video.m3u8",
-   "ipv6": false
-  },
-  {
-   "url": "https://jwcdnqx.hebyun.com.cn/live/hdxwzh/1500k/tzwj_video.m3u8",
-   "verdict": null,
-   "canonical": "https://jwcdnqx.hebyun.com.cn/live/hdxwzh/1500k/tzwj_video.m3u8",
    "ipv6": false
   },
   {

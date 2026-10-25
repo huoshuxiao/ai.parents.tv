@@ -46,6 +46,16 @@ IDENTITY_GOOD = {"台标相符"}
 # 身份台账 `identity_review.jsonl` 是手抄的一份，抄漏的那几条（CCTV-11/14/15 的测试卡线就是这么掉的）
 # 会让「有台标」这条真证据在构建侧读不到，所以这一份按轮次累加直接进构建（用户 10-24「保留有台标的线路」）。
 REVIEW_LOGO = {}
+# 三轮全线路回测的汇总（tools/retest3_summary.py 的产物）：canonical url -> {ok, fails, verdicts}。
+# 用户 10-24 18:3x：央视·卫视、地方频道全线路回测 3 次，**三次都不通、又没有本台台标**的线才删。
+RETEST = {}
+RETEST_FAIL_LIMIT = 3
+# 真正要被这条判据摘掉的地址（启动时算一次）：evidence() 与黑名单两侧读同一个集合。
+RETEST_CUT = set()
+# 央视·卫视「全线路回测 3 次」那一轮（用户 10-24 20:1x）：三帧齐全且三轮都没本台台标、或三轮都没帧
+# 又没有台标实证 ⇒ 删线。文件是 tools/.cache/cctv3/summary.json（程序复核＋人工复核都在里面）。
+# 这一格与 RETEST_CUT 并存：RETEST 是「三轮不通」那批，CCTV3 是「三轮无台标」那批，理由分开记。
+CCTV3_CUT = {}
 # 同一批 `review.json` 里的「这一帧是不是节目」那一半（只收 测试卡/广告/占位页/推广页 四类）。
 # 为什么要接进来：门禁的 `placeholder` 字段只在**画面指纹命中已知图**时才写，人工看图新认出来的
 # 那一屏购物广告不会落进 `line_frames.jsonl`——于是构建侧看到的还是「正常画面」，
@@ -231,6 +241,14 @@ def evidence(url, name=""):
     if FROZEN.get(canon):
         # 长窗（分钟级）确认「源没在给新画面」：这是稳定坏，与占位页同级 ⇒ 删线那一侧。
         return (4, 0)
+    if canon in RETEST_CUT:
+        # 三轮回测都不通、且没有本台台标（用户 10-24 18:3x）。这一格走在身份判定前面：
+        # 有「台标相符」的地址根本进不了这个集合（compute_retest_cuts 那把尺已经排掉）。
+        return (4, 0)
+    if canon in CCTV3_CUT:
+        # 央视·卫视三轮回测：三轮都无本台台标（人工复核过），或三轮都没帧且无台标实证。
+        # 理由随地址进黑名单，设备端自动更新不会把它们捞回来。
+        return (4, 0)
     verdict = IDENTITY.get(key)
     card = FRAME_PLACEHOLDER.get(canon)
     human_card = "" if card else review_card(name, canon)
@@ -364,6 +382,17 @@ def blocked_lines(keep=frozenset()):
     for key, label in FRAME_PLACEHOLDER.items():
         if label:
             out[key] = "占位页"
+    for key in RETEST_CUT:
+        out.setdefault(key, "三轮回测都不通且无台标")
+    for key, reason in CCTV3_CUT.items():
+        # 央视·卫视那三轮「无台标」回测的删除清单也要跟着拉黑：设备端「立即更新线路」
+        # 会从公开列表把这些地址再捞一次，只在目录里摘掉挡不住它们回来。
+        out.setdefault(key, reason)
+    for _name, url, _size in SD_DROPPED:
+        # 「未来新增的线路也不添加标清线路」这句指令的另一半在这里：公开列表明天还会把这些
+        # 标清地址换个台名再送一遍，设备端「立即更新线路」只认黑名单，不进黑名单就会回来。
+        out.setdefault(stream_rules.canon(url),
+                       "标清线路（实测尺寸不到高清档或清单写着「标清」，用户 10-25 指令不进目录）")
     for key, verdict in FROZEN.items():
         if verdict:
             # 长窗冻帧要跟着进黑名单：设备端「立即更新线路」会从公开列表把这条地址再捞一次，
@@ -387,6 +416,55 @@ def blocked_lines(keep=frozenset()):
     return {k: out[k] for k in sorted(out) if k not in keep}, exempted
 
 
+def line_size(url):
+    """这条线实测/自报到的画面尺寸（宽, 高）；两个来源都没有就返回 None（当作未知）。
+
+    与 [resolution_rank] 同一批来源，只是不折成面积：判「标清」要用「高/宽各是多少」，
+    光有面积会把 1536×864 与 1280×1040 这种算成同一档。
+    """
+    key = stream_rules.canon(url)
+    size = FRAME_RES.get(key) or (HEALTH.get(key) or {}).get("resolution")
+    if not size:
+        return None
+    try:
+        w, h = int(size[0]), int(size[1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
+    return (w, h) if w > 0 and h > 0 else None
+
+
+# 与设备端选线面板那一把尺完全对齐（PlayerScreen.qualityText：高 ≥700 或宽 ≥1200 才叫「高清」，
+# 否则「标清」）。两处口径不一致时，用户在屏幕上看到的档就和构建里删的档不是同一批线。
+SD_MAX_HEIGHT = 699
+SD_MIN_WIDTH = 1200
+# 「标清」字样只认清单标题里的独立一档（CCTV-2 标清 / XX卫视-标清），
+# 尺寸没读到的线只在这一条证据下才摘——URL 里的 480/576 可能是端口或节目号，拿来判档会误杀。
+SD_TITLE = re.compile(r"(?:^|[\s\-_/·(（\[])(?:标清|SD)(?:$|[\s\-_/·)）\]])", re.IGNORECASE)
+
+
+def is_sd_line(url, raw=""):
+    """这条线是不是「标清」。用户 10-25 指令：「全频道删除标清线路，未来新增的线路也不添加标清线路」。
+
+    尺寸未知、标题里也没有「标清」档名的 ⇒ 不判标清（不摘）。宁可留一条未知，
+    也不从 URL 字样猜档：10-24 现读 `live.hd.hdbs.cn` 那种域名带 hd 的假信号，反过来同样成立。
+    """
+    size = line_size(url)
+    if size:
+        w, h = size
+        return h <= SD_MAX_HEIGHT and w < SD_MIN_WIDTH
+    return bool(SD_TITLE.search(raw or ""))
+
+
+# ── 清晰度这一档（用户 10-25 指令「全频道删除标清线路，未来新增的线路也不添加标清线路，
+#    删除没有线路的频道」＋「央视·卫视、地方频道，线路按清晰度由高到低排序」）──────
+DROP_SD = True        # --keep-sd 把它关掉；关掉的试算里标清线原样留着，用于对表
+STREAM_RAW = {}       # 规范地址 -> 公开列表原文那一行（尺寸没读到的线靠它判「标清」档名）
+SD_DROPPED = []       # 本轮摘掉的标清线（台名, 地址, 尺寸/原文），[definition] 那一笔报数用
+SD_EXEMPT = []        # 必留名单里「整台都是标清」所以原样保留的那几条
+# 这两组按清晰度排线路；其余组仍按证据档优先（用户这一句只点名央视·卫视与地方频道）。
+RES_FIRST_CATS = ("cctv", "local")
+
+
 def resolution_rank(url):
     """这条线自报/实测到的画面尺寸，用来把高分辨率的线排前面。
 
@@ -396,14 +474,8 @@ def resolution_rank(url):
       2) 清单自报的 `#EXT-X-STREAM-INF:…RESOLUTION=宽x高`（health_probe 记的）。
     都没有就返回 0（当作未知），让证据档和 IPv6 决定次序。
     """
-    key = stream_rules.canon(url)
-    size = FRAME_RES.get(key) or (HEALTH.get(key) or {}).get("resolution")
-    if not size:
-        return 0
-    try:
-        return int(size[0]) * int(size[1])
-    except (TypeError, ValueError, IndexError):
-        return 0
+    size = line_size(url)
+    return size[0] * size[1] if size else 0
 
 
 SOURCES = {
@@ -445,7 +517,11 @@ PROVINCE_ORDER = [
 ]
 PROVINCE_GROUPS = set(PROVINCE_ORDER)
 
-CATEGORY_ORDER = ["cctv", "local", "hktw", "featured", "sports", "international"]
+# 分组先后＝首页 tab 的先后，同一个台号（数字键）也按这个顺序排。
+# 用户 10-25 00:0x：「频道分组顺序，央视·卫视、体育频道、地方频道、港澳台频道、国际频道」
+# ⇒ sports 提到 local 前（19:5x 那格）之后再越过 hktw，港澳台落到地方之后。
+# featured「特色频道」现读 0 台（10-23 20:3x 整组删台），放在 hktw 前只影响它自己那条 tab 的位置。
+CATEGORY_ORDER = ["cctv", "sports", "local", "hktw", "featured", "international"]
 CATEGORY_NAMES = {
     "cctv": "央视·卫视",
     "local": "地方频道",
@@ -521,6 +597,9 @@ CCTV_ORDER.update({
     "CGTN": 90, "CGTN 纪录": 91, "CGTN 法语": 92,
     "CGTN 西语": 93, "CGTN 阿语": 94, "CGTN 俄语": 95,
 })
+# 用户 10-24 18:3x：CCTV-8K 要排在 CCTV-4K **后面**（原先它在「4K 超高清」子分组里，
+# 隔着一整片卫视，找台时跳得太远）。用半步值插进去，别的台号一个都不动。
+CCTV_ORDER["CCTV-8K 超高清"] = CCTV_ORDER["CCTV-4K 超高清"] + 0.5
 
 SAT_ORDER = [
     "北京卫视", "东方卫视", "天津卫视", "重庆卫视", "河北卫视", "山西卫视",
@@ -849,23 +928,37 @@ class Builder:
                 "source": source,
                 "ipv6": is_ipv6(url),
                 "geo": is_geo(raw),
+                # 清单原文那一行（台名后缀常写着「标清/高清/蓝光」）。尺寸没读到的线靠它判档，
+                # 见 [is_sd_line]——摘线那一棒只剩地址，所以原文按规范地址存一份。
+                "raw": raw or "",
                 "seq": len(ch["streams"]),
             })
+            STREAM_RAW[stream_rules.canon(url)] = raw or ""
 
     def final_channels(self):
         rows = []
         for (category, subgroup, _), ch in self.channels.items():
+            # 央视·卫视、地方频道这两组按「清晰度由高到低」（用户 10-25 指令），
+            # 别的组仍按「证据档优先」。两组都用一条底线：判坏的线（档 4）不许顶到前面——
+            # 清晰度再高，连不上就是把「正在连接」摆到第 1 条。
+            res_first = category in RES_FIRST_CATS
             streams = sorted(
                 ch["streams"],
                 key=lambda s: (
                     # 1) 有没有实测证据说这条能出画面（可用的排最前）
-                    evidence(s["url"], ch["name"])[0],
-                    # 2) 同一档里 IPv6 优先（用户 2026-10-22 指令；家里网络有 v6 出口，
+                    #    res_first 那一支把「坏/不坏」折成两档，剩下的次序交给分辨率
+                    (1 if evidence(s["url"], ch["name"])[0] >= 4 else 0) if res_first
+                    else evidence(s["url"], ch["name"])[0],
+                    # 2) 清晰度（实测尺寸），高的在前
+                    -resolution_rank(s["url"]) if res_first else 0,
+                    # 2b) 同一清晰度档内，慢线排到快线之后（不跨档，见 slow_penalty）
+                    slow_penalty(s["url"], ch["name"]) if res_first else 0,
+                    # 3) 同一档里 IPv6 优先（用户 2026-10-22 指令；家里网络有 v6 出口，
                     #    而本机没有，所以 v6 线路只可能是「本机连不通」，不能因此排到可用线后面）
                     0 if s["ipv6"] else 1,
-                    # 3) 清单自报的分辨率，高的在前
+                    # 4) 清单自报的分辨率，高的在前
                     -resolution_rank(s["url"]),
-                    # 4) 细排：分片快慢、地区限制、来源、原始次序
+                    # 5) 细排：分片快慢、地区限制、来源、原始次序
                     evidence(s["url"], ch["name"]),
                     s["geo"],
                     SOURCE_PRIORITY.get(s["source"], 50),
@@ -1030,6 +1123,146 @@ def resort_streams(row):
         row["streams"],
         key=lambda u: (evidence(u, name)[0], 0 if is_ipv6(u) else 1, -resolution_rank(u), evidence(u, name)),
     )
+
+
+def slow_penalty(url, name):
+    """首分片 >10 秒的线在**同一清晰度档**里排到快线之后（用户 10-25 18:5x 点档「乙：清晰度优先」）。
+
+    只做同档内的次序微调，绝不跨分辨率——1920×1090 的慢线仍然排在 1280 快线前面；
+    设备播过的那条不压（「已播过的线路绝不自动换线」）。
+    """
+    canon = stream_rules.canon(url)
+    ms = (HEALTH.get(canon) or {}).get("elapsed_ms")
+    if ms is None or ms <= 10000:
+        return 0
+    return 0 if DEVICE_PROOF.get(canon) == name else 1
+
+
+def res_first_key(name):
+    """央视·卫视、地方频道组内的次序尺子：清晰度由高到低，判坏的线（档 4）一律沉底。
+
+    用户 10-25 的原话是「线路按清晰度由高到低排序」，这里比字面软一点点：
+    实测连不上/解不开的线不许因为像素多就顶到第 1 条——那正是他一直在说的「正在连接」。
+    慢线（`slow_penalty`）只在同一清晰度档内往后排，不跨档。
+    """
+    def key(url):
+        ev = evidence(url, name)
+        return (1 if ev[0] >= 4 else 0, -resolution_rank(url), slow_penalty(url, name), ev[0], ev)
+    return key
+
+
+def remount_by_logo(channels, moves):
+    """按台标把挂错频道的卫视线改挂到台标对应的那一台（用户 10-25「卫视频道，台标与频道不一致的，
+    根据台标移入对应卫视频道」）。
+
+    证据文件是一份人工复核过的清单（`--wshi-moves`），每条写 from/to/证据。这里只做搬运，不做判定：
+    判定在 `tools/.cache/wshi_mismatch.py`（跨模板打分）＋人工看单张角标，两道都过才写进清单。
+    三条硬规矩：
+      ①from 与 to 都必须在现读目录里存在，且这条地址确实挂在 from 名下——否则 `[拒绝]` 并跳过，
+        不凭一条结论凭空造台名；
+      ②只允许卫视组内部互挂（`subgroup == 卫视`），跨组改挂会把分组顺序那两条指令搅乱；
+      ③改挂后的地址要落进目录顶层的 `lineMoves`，设备端合并公开列表时按它挡回错误台名
+        （公开列表明天还会按原名把这条地址再送一遍——与 blockedLines 同一个道理）。
+    """
+    by_name = {ch["name"]: ch for ch in channels}
+    done = {}
+    for canon, spec in (moves or {}).items():
+        src, dst = spec.get("from"), spec.get("to")
+        ch_src, ch_dst = by_name.get(src), by_name.get(dst)
+        if not ch_src or not ch_dst:
+            print(f"[拒绝] 改挂 {src}→{dst}：目录里现读没有这个台名，跳过 {canon}")
+            continue
+        if ch_src.get("subgroup") != "卫视" or ch_dst.get("subgroup") != "卫视":
+            print(f"[拒绝] 改挂 {src}→{dst}：不是卫视组内部，跳过 {canon}")
+            continue
+        hit = next((s for s in ch_src["streams"] if stream_rules.canon(s) == canon), None)
+        if not hit:
+            print(f"[拒绝] {src} 名下现读没有这条地址，跳过 {canon}")
+            continue
+        ch_src["streams"] = [s for s in ch_src["streams"] if stream_rules.canon(s) != canon]
+        if not any(stream_rules.canon(s) == canon for s in ch_dst["streams"]):
+            ch_dst["streams"] = list(ch_dst["streams"]) + [hit]
+        done[canon] = {"from": src, "to": dst, "evidence": spec.get("evidence", "")}
+    if done:
+        print(f"[logo_move] 按台标改挂 {len(done)} 条：" +
+              "、".join(f'{v["from"]}→{v["to"]}' for v in done.values()))
+    cross_check_relabels(done)
+    return done
+
+
+def cross_check_relabels(moves):
+    """改挂这件事现在有两名册：随目录走的 `lineMoves` 与设备端手抄的 `RelabeledStreams`（Kotlin）。
+    两份各写各的就会打架——构建按一份搬完，设备端合并公开列表时按另一份摘掉，那条线两头都没有。
+    这里只报 `[check]` 不选边（与 #94 那一枚同一处置）：真要对表，把 Kotlin 那 4 条收进 lineMoves。
+    """
+    src_kt = BASE / "app/src/main/java/com/parentstv/live/data/StreamUrl.kt"
+    if not src_kt.exists():
+        return
+    text = src_kt.read_text(encoding="utf-8")
+    start = text.find("private val targets")
+    if start < 0:
+        print("[check] 改挂名册对表：没在 StreamUrl.kt 里找到 RelabeledStreams 的 targets，跳过")
+        return
+    table = text[start:start + text[start:].index("\n    )")]
+    kt = {stream_rules.canon(url): owner for url, owner in
+          re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"', table)}
+    clash = [(c, kt[c], v["to"]) for c, v in moves.items() if c in kt and kt[c] != v["to"]]
+    print(f"[check] 改挂名册对表：lineMoves {len(moves)} 条、设备端 RelabeledStreams {len(kt)} 条"
+          + (f"，同一地址两个主人 {len(clash)} 条：" +
+             "、".join(f"{c}（设备端{a} / 目录{b}）" for c, a, b in clash) if clash else "，无冲突"))
+
+
+
+def drop_sd_lines(channels):
+    """摘掉全目录的标清线，并把央视·卫视、地方频道按清晰度重排（用户 10-25 两句指令）。
+
+    为什么设在备用线追加之后、strict_filter 之前：`manual_backups`/`sat_manual_backups`
+    是「追加」语义，在 final_channels 那一站之后才进来，闸门放在它们上游就管不住手工线；
+    而摘线这件事只留这一处出口，避免「校验器放行、下游又判一遍」两套口径。
+    两条处置：
+      ①摘空的台整台删掉（同句指令「删除没有线路的频道」），当场报是哪几台；
+      ②必留名单（REQUIRED_CHANNELS：必看 20 台含辽宁体育）里的台不许被摘空——
+        辽宁体育只有一条线，摘完「辽宁体育必须能看」就没了。这种台原样保留并打进 [必留豁免]。
+    返回（留下的台, 摘空的台名）。
+    """
+    dropped_channels = []
+    survivors = []
+    for row in channels:
+        keep, sd = [], []
+        for url in row["streams"]:
+            raw = STREAM_RAW.get(stream_rules.canon(url), "")
+            (sd if is_sd_line(url, raw) else keep).append(url)
+        if sd and not keep and row["name"] in REQUIRED_CHANNELS:
+            print(f"[definition][必留豁免] {row['name']} 全部 {len(sd)} 条都判标清 ⇒ 整台原样保留"
+                  f"（这台在必留名单里，不许被摘空）")
+            SD_EXEMPT.extend((row["name"], u) for u in sd)
+            keep, sd = list(row["streams"]), []
+        SD_DROPPED.extend((row["name"], u, line_size(u) or STREAM_RAW.get(stream_rules.canon(u), "")[:28])
+                          for u in sd)
+        if not keep:
+            dropped_channels.append(row["name"])
+            continue
+        row = dict(row)
+        row["streams"] = keep
+        if row["category"] in RES_FIRST_CATS:
+            row["streams"] = sorted(keep, key=res_first_key(row["name"]))
+        survivors.append(row)
+    return survivors, dropped_channels
+
+
+def line_quality_map(channels):
+    """目录里每条存活线路的实测尺寸（规范地址 -> "宽x高"），随目录打进 APK 给选线面板用。
+
+    设备端现场只探得到正在播的那一条，其余线的尺寸只能构建时带上
+    （用户 10-25「线路选择画面没看到每条线路的清晰度」）。没实测到的线不进这一份（显示「未知」）。
+    """
+    out = {}
+    for row in channels:
+        for url in row["streams"]:
+            size = line_size(url)
+            if size:
+                out[stream_rules.canon(url)] = f"{size[0]}x{size[1]}"
+    return out
 
 
 def merge_other_bucket_duplicates(rows, log):
@@ -1505,28 +1738,102 @@ MANUAL_4K = [
     # 画面左上角写着「CCTV 8K 超高清」、正中写着「8K UHDTV / CCTV」——是频道自己的测试卡，
     # 按用户 02:14 那句「有台标就算真出画面」算正常线路。台标身份结论记在
     # tools/.cache/linecheck/identity_review.jsonl。
-    ("CCTV-8K 超高清", [
-        "http://38.75.136.137:98/gslb/dsdqpub/cctv8k.m3u8?auth=testpub",
-        "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv8k",
-        "http://107.150.60.122/live/cctv8k.m3u8",
-        "http://192.151.150.154/live/cctv8k.m3u8",
-    ]),
+    # 10-24 18:3x 起它的位置由 `MANUAL_4K_PINNED` 管（用户要求排在 CCTV-4K 后面），不在这张表里。
     ("东方卫视 4K", ["https://bp-resource-dfl.bestv.cn/148/3/video.m3u8"]),
     ("河北 4K", ["http://event.pull.hebtv.com/live/live101.m3u8"]),
     ("苏州 4K", [
         "http://tylive.kan0512.com/norecord/csztv4k_4k.m3u8",
         "http://live-auth.51kandianshi.com/szgd/csztv4k_hd.m3u8",
     ]),
-    ("咪咕体育 4K", [
-        "http://gslbserv.itv.cmvideo.cn:80/1.m3u8?channel-id=FifastbLive"
-        "&Contentid=3000000010000005180&livemode=1&stbId=yu&mode=1",
+]
+
+# 位置要钉死的台（不进「4K 超高清」子分组）：用户 10-24 18:3x 原话
+# 「调整CCTV8K至CCTV4K后面，咪咕体育4K移入体育频道」。
+# 8K 归到「央视」子分组、order 用 CCTV_ORDER 里那个半步值，目录里就紧挨 CCTV-4K；
+# 咪咕体育 4K 走 MANUAL_SPORTS_ORDERED 落进 sports/咪咕直播（order=50，紧挨 4K-1/4K-2）。
+MANUAL_4K_PINNED = [
+    ("CCTV-8K 超高清", "cctv", "央视", CCTV_ORDER["CCTV-8K 超高清"], [
+        "http://38.75.136.137:98/gslb/dsdqpub/cctv8k.m3u8?auth=testpub",
+        "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv8k",
+        "http://107.150.60.122/live/cctv8k.m3u8",
+        "http://192.151.150.154/live/cctv8k.m3u8",
     ]),
 ]
 # 台标靠抽帧认，不靠列表里写的名字：
 # 3221227021 画面左上角是「CCTV5 体育」，正在播 WTT 中国大满贯女双决赛；
 # 3221226899 右上角「咪咕视界」水印，足球转播。两条都是 2026-10-21 18:41 抽到帧、
 # 18:52 再各自取首分片算 MD5（互不相同）确认在出真画面。
+MANUAL_SPORTS_ORDERED = [
+    # 用户 10-24 18:3x：「咪咕体育 4K 移入体育频道」，并挨着同类的咪咕直播 4K-1/4K-2
+    # （add_sports 给那两台 order=40，这里取 50：在 4K 之后、咪咕直播 1 之前）。
+    ("咪咕体育 4K", "sports", "咪咕直播", 50,
+     "http://gslbserv.itv.cmvideo.cn:80/1.m3u8?channel-id=FifastbLive"
+     "&Contentid=3000000010000005180&livemode=1&stbId=yu&mode=1"),
+    # 用户 10-24 19:4x 点档「允许新增 咪咕直播 9… 这类新台」。order 写 200+台号：
+    # 走 MANUAL_EXTRA 的默认 999 时同类台按台名字典序排，「9」会掉到「36」后面
+    # （字典序 "10" < "9"）；给显式 order 才能让 9→36 按数字排在一起。
+    ("咪咕直播 9", "sports", "咪咕直播", 200 + 9,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000028638&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 10", "sports", "咪咕直播", 200 + 10,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000001000031494&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 11", "sports", "咪咕直播", 200 + 11,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000000097&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 12", "sports", "咪咕直播", 200 + 12,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000002019&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 13", "sports", "咪咕直播", 200 + 13,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000002809&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 14", "sports", "咪咕直播", 200 + 14,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000003915&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 15", "sports", "咪咕直播", 200 + 15,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000004193&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 16", "sports", "咪咕直播", 200 + 16,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000005837&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 17", "sports", "咪咕直播", 200 + 17,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000006077&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 18", "sports", "咪咕直播", 200 + 18,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000006658&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 19", "sports", "咪咕直播", 200 + 19,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000009788&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 20", "sports", "咪咕直播", 200 + 20,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000010833&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 21", "sports", "咪咕直播", 200 + 21,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000011297&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 22", "sports", "咪咕直播", 200 + 22,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000011518&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 23", "sports", "咪咕直播", 200 + 23,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000012558&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 24", "sports", "咪咕直播", 200 + 24,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000012616&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 25", "sports", "咪咕直播", 200 + 25,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000015470&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 26", "sports", "咪咕直播", 200 + 26,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000015560&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 27", "sports", "咪咕直播", 200 + 27,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000019839&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 28", "sports", "咪咕直播", 200 + 28,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000021904&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 29", "sports", "咪咕直播", 200 + 29,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000023434&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 30", "sports", "咪咕直播", 200 + 30,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000025380&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 31", "sports", "咪咕直播", 200 + 31,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000010000027691&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 32", "sports", "咪咕直播", 200 + 32,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011518&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 33", "sports", "咪咕直播", 200 + 33,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011519&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 34", "sports", "咪咕直播", 200 + 34,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011520&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 35", "sports", "咪咕直播", 200 + 35,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011521&livemode=1&stbId=YanG-1989"),
+    ("咪咕直播 36", "sports", "咪咕直播", 200 + 36,
+     "http://gslbserv.itv.cmvideo.cn/index.m3u8?channel-id=FifastbLive&Contentid=3000000020000011522&livemode=1&stbId=YanG-1989"),
+]
+
 MANUAL_EXTRA = [
+    # 咪咕体育 4K 已挪进 MANUAL_SPORTS_ORDERED（order=50）：用户 10-24 18:3x 「移入体育频道」，
+    # 原先它挂在 cctv/「4K 超高清」下，与「体育频道」隔了两个分类；按台名与内容都该归体育。
+
     ("咪咕体育", "sports", "咪咕直播",
      "http://39.134.61.218/PLTV/88888888/224/3221226899/index.m3u8"),
     ("咪咕体育", "sports", "咪咕直播",
@@ -1577,8 +1884,13 @@ def add_manual_channels(builder):
     for order, (display, urls) in enumerate(MANUAL_4K):
         for url in urls:
             builder.add(display, "cctv", "4K 超高清", url, source="manual_4k", order=order)
+    for display, category, subgroup, order, urls in MANUAL_4K_PINNED:
+        for url in urls:
+            builder.add(display, category, subgroup, url, source="manual_4k", order=order)
     for display, category, subgroup, url in MANUAL_EXTRA:
         builder.add(display, category, subgroup, url, source="manual_extra")
+    for display, category, subgroup, order, url in MANUAL_SPORTS_ORDERED:
+        builder.add(display, category, subgroup, url, source="manual_sports", order=order)
     for display, category, subgroup, order, url in MANUAL_SPORTS:
         builder.add(display, category, subgroup, url, source="manual_sports", order=order)
 
@@ -1770,6 +2082,76 @@ def load_identity(path):
     return rows
 
 
+def load_retest(path):
+    """读三轮回测汇总（retest3_summary.py）：canonical url -> {ok, fails, verdicts}。"""
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get("urls") or {}
+
+
+def load_wshi_moves(path):
+    """读「按台标改挂」的人工确认清单（默认 tools/wshi_logo_moves.json）：canonical url -> {from,to,evidence}。
+
+    这份清单是两道闸之后的产物，构建层不再判定：探测器 `tools/.cache/wshi_mismatch.py` 的跨模板打分
+    先挑出「本台台标没认出来、别的卫视台标认出来了」的格，再逐张单帧角标人工复核过一眼
+    （10-25 我拿两列拼图肉眼看错一枚草书台标，差点摘掉一条能用的线 ⇒ 拼图不算复核）。
+    清单缺文件／缺 moves 都返回 {}：这一条指令的默认状态是「没改挂任何线」，不是「没证据就乱挂」。
+    """
+    if not path or not Path(path).exists():
+        return {}
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out = {}
+    for row in data.get("moves") or []:
+        canon = stream_rules.canon(row.get("url") or "")
+        if not canon:
+            print(f"[warn] 改挂清单里有一条没地址，跳过：{row}")
+            continue
+        frm, to = row.get("from"), row.get("to")
+        if not frm or not to:
+            print(f"[warn] 改挂 {canon} 缺 from/to，跳过")
+            continue
+        out[canon] = {"from": frm, "to": to, "evidence": row.get("evidence") or ""}
+    return out
+
+
+def load_cctv3(path):
+    """读央视·卫视三轮回测的删除清单（tools/.cache/cctv3/summary.json）：canonical url -> 理由。
+
+    只收 summary 里 cut 那几条；每条都带着轮次、程序复核分数与人工复核结论（见同一份文件）。
+    """
+    if not path or not Path(path).exists():
+        return {}
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out = {}
+    for row in data.get("cut") or []:
+        canon = stream_rules.canon(row.get("url") or "")
+        if not canon:
+            continue
+        kind = row.get("kind") or "logo"
+        label = "三轮都无台标（程序＋人工复核）" if kind == "logo" else "三轮都没帧且无台标实证"
+        out[canon] = label
+    return out
+
+
+def compute_retest_cuts():
+    """三轮都不通、并且没有任何本台台标实证的地址（台标证据与 `logo_verified` 同一批来源）。
+
+    为什么要「同时」满足两条：用户的原话是「≥3 是无台标删除线路」——回测失败只是必要条件，
+    有本台台标的那条按 10-24「保留有台标的线路」继续留着（广告时段也会连不上分片）。
+    """
+    cuts = set()
+    for canon, row in RETEST.items():
+        if int(row.get("fails") or 0) < RETEST_FAIL_LIMIT:
+            continue
+        if any(v in IDENTITY_GOOD for k, v in IDENTITY.items() if k.endswith("|" + canon)):
+            continue
+        if (REVIEW_LOGO.get(canon) or {}).get("logo", "").startswith("台标相符"):
+            continue
+        cuts.add(canon)
+    return cuts
+
+
 def load_device_proof(path):
     """读模拟器截图台账（`must_shot_pass.py` 落的 jsonl）里应用自己记下的那条播通线路。
 
@@ -1812,8 +2194,13 @@ def move_slow_lines_back(channels, health, is_device_played):
     同一把尺＝本轮 HEALTH 的最新读数 `elapsed_ms > 10000`，与 20:4x 那份慢线清单同口径；
     设备播过的那条永不挪（「已播过的线路绝不自动换线」）；台内已排在最后一位的慢线
     挪了也是原位置，名单只记真要动的那批。只重排、不删线、不动黑名单。
+
+    用户 10-25 18:5x 点档「乙：清晰度优先」：`RES_FIRST_CATS`（央视·卫视、地方频道）这两组
+    的次序只由清晰度决定，慢线**不再挪台尾**——否则一条 1920×1090 会被压到 1280 后面，
+    与第 8 条指令字面冲突。其余组仍照旧挪（那几组本来就按证据档排，不按清晰度）。
     """
     moved: list[tuple[str, str]] = []
+    skipped: list[str] = []
     for ch in channels:
         streams = ch["streams"]
         n = len(streams)
@@ -1831,9 +2218,14 @@ def move_slow_lines_back(channels, health, is_device_played):
         to_move = [s for s in streams if s in slow and idx[s] < n - 1]
         if not to_move:
             continue
+        if ch.get("category") in RES_FIRST_CATS:
+            skipped.append(ch["name"])
+            continue
         keep = [s for s in streams if s not in slow or idx[s] == n - 1]
         ch["streams"] = keep + to_move
         moved.extend((ch["name"], stream_rules.canon(s)) for s in to_move)
+    if skipped:
+        print(f"[slow] 清晰度优先组不挪慢线（用户 10-25 点档乙）：{len(skipped)} 台：{'、'.join(skipped)}")
     return channels, moved
 
 
@@ -1913,10 +2305,12 @@ def strict_filter(channels):
 
 
 def build(args):
-    global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD, FRAME_RES, FRAME_PLACEHOLDER, FRESH_RES, DEVICE_PROOF
+    global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD, DROP_SD, FRAME_RES, FRAME_PLACEHOLDER, FRESH_RES, DEVICE_PROOF
     global FRAME_STALLED, FROZEN, FROZEN_NO_SIBLING, REVIEW_LOGO, AMBIGUOUS_LOGO, REVIEW_PICTURE
+    global RETEST, RETEST_CUT, CCTV3_CUT
     MAX_STREAMS = max(0, int(args.max_streams))
     DROP_DEAD = not args.keep_dead
+    DROP_SD = not args.keep_sd
     out_path = Path(args.out) if args.out else OUT
     # 证据是可以攒的：一场跑只覆盖它探过的那些线路，没探过的沿用早先那场的读数。
     # 只吃一份文件时，晚的一场会把早的一场「探到过、这轮没探」的结论整片抹掉，
@@ -1938,6 +2332,18 @@ def build(args):
           f"（其中「台标相符」{sum(1 for v in REVIEW_LOGO.values() if v['logo'].startswith('台标相符'))} 枚）")
     print(f"[review] 人工判为「这一帧不是节目」（测试卡/广告/占位页/推广页）的地址 {len(REVIEW_PICTURE)} 枚"
           f"——这一族在构建侧只降分、不摘线（摘线那一侧仍只认钉死的画面指纹）")
+    RETEST = load_retest(args.retest) if args.retest else {}
+    RETEST_CUT = compute_retest_cuts()
+    if RETEST:
+        print(f"[retest] {RETEST.get('__rounds__', '')}"
+              f"{len(RETEST)} 条地址的回测汇总：三轮都不通且没有本台台标的 {len(RETEST_CUT)} 条"
+              f"（有台标的按「保留有台标的线路」留着）")
+    CCTV3_CUT = load_cctv3(args.cctv3) if args.cctv3 else {}
+    if CCTV3_CUT:
+        # 与 [retest] 那两把尺分开报：这一把只回答「三轮都没看到本台台标」，
+        # 判据是画面（程序复核＋人工复核），不是连通性。
+        print(f"[cctv3] {len(CCTV3_CUT)} 条央视·卫视线路：三轮都无本台台标，或三轮都没帧且无台标实证"
+              f"（删线＋拉黑，设备端自动更新捞不回来）")
     frame_paths = list(dict.fromkeys([DEFAULT_FRAMES] + [Path(p) for p in (args.frames or [])]))
     FRAME_RES, FRAME_PLACEHOLDER, FRAME_STALLED = {}, {}, {}
     for path in frame_paths:
@@ -2183,6 +2589,20 @@ def build(args):
     # 本机实测端口不通/分片 404 的主机，公开列表里仍会带回来，按前缀剔除。
     # dassby.qqff.top 不在此列：本机网络测不通，但用户在电视上实测能出画面。
     dead_stream_prefixes = {
+        # 用户 10-24 19:4x：「咪咕体育线路2 HLS 2409 响应超时，确认线路2是否正确」。
+        # 现读：目录里体育组的 10 条 2409 IPv6 线（咪咕直播 1–8、4K-1/4K-2 的第 2 条）
+        # 一轮 10/10 全部「连接超时」——这台电视走 IPv6 出网会抖，等于「线路2」永远是死的。
+        # 先按台名摘掉，同时按地址拉黑（见 user_flagged_blocks），设备端自动更新不会再捞回来。
+        "咪咕直播 1": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 2": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 3": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 4": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 5": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 6": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 7": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 8": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 4K-1": ("http://[2409:8087:1a01:df::",),
+        "咪咕直播 4K-2": ("http://[2409:8087:1a01:df::",),
         "辽宁体育": (
             "http://59.44.102.18:8888/",
             "http://42.176.185.28:9901/",
@@ -2532,6 +2952,62 @@ def build(args):
         )),
     ):
         manual_backups.setdefault(_name, []).extend(_urls)
+    # 用户 10-24 目标「央视·卫视、体育频道增加有效线路源」：从盘上 62 份 health 台账里
+    # 捞回 65 条「可取到分片、但此刻不在目录也不在黑名单」的旧候选，当面重探 60 条能取分片，
+    # 每条抽一帧（tools/.cache/add7/frames/，总览图 sheet_01..09）逐张看左上角台标：
+    #   - 只收**台标与频道名相符**的（26 条）；广告时段没照到台标的、画面是 CCTV+ 的、
+    #     同一帧 md5 出现在两个不同频道的（那是同一台代理喂的广告，7a0848/000855/80a995/
+    #     ba63c5/d79bdf/c4e3f1/5313b5 七组）一律不收；
+    #   - 只收原生 ≥1280 宽的全高清档——标清那批（800×610/720×578）不往这里加，
+    #     因为 10-23 19:1x 用户点过「删除标清源」（河北卫视 weishi_tingyun 就是这么摘的，
+    #     它这次又被候选扫出来，仍不放回）。
+    # 追加语义：现有第一条是验证过的（或设备播过的），新线只排在后面。
+    for _name, _urls in (
+        ("CCTV-1 综合", (
+            "http://198.204.228.26/live/cctv1hd.m3u8",  # add7 #14 md5:af875f
+        )),
+        ("CCTV-2 财经", (
+            "http://204.12.221.218:8181/3m1080p/cctv2.m3u8",  # add7 #39 md5:e4bda9
+        )),
+        ("CCTV-4 中文国际", (
+            "http://173.208.212.130:8181/1080p/cctv4.m3u8",  # add7 #36 md5:126835
+        )),
+        ("CCTV-5+ 体育赛事", (
+            "http://ylt.7766.org:333/hls/21/index.m3u8",  # add7 #32 md5:bb7cae
+            "http://74.91.26.218:82/live/cctv5p.m3u8",  # add7 #53 md5:3eab12
+        )),
+        ("CCTV-6 电影", (
+            "http://198.204.228.26/live/cctv6hd.m3u8",  # add7 #48 md5:945bcd
+        )),
+        ("CCTV-7 国防军事", (
+            "http://107.150.60.122/live/cctv7hd.m3u8",  # add7 #42 md5:34215c
+        )),
+        ("CCTV-8 电视剧", (
+            "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv8hd",  # add7 #50 md5:374730
+            "http://192.151.150.154/live/cctv8hd.m3u8",  # add7 #51 md5:ca17d3
+        )),
+        ("CCTV-9 纪录", (
+            "http://107.150.60.122/live/cctv9hd.m3u8",  # add7 #57 md5:2b1787
+        )),
+        ("CCTV-11 戏曲", (
+            "http://107.150.60.122/live/cctv11hd.m3u8",  # add7 #13 md5:bab88b
+            "http://38.75.136.137:98/gslb/dsdqpub/cctv11hd.m3u8?auth=testpub",  # add7 #15 md5:c64966
+        )),
+        ("CCTV-14 少儿", (
+            "http://204.12.221.218:8181/3m1080p/cctv14.m3u8",  # add7 #17 md5:d9920a
+        )),
+        ("CCTV-15 音乐", (
+            "http://204.12.221.218:8181/3m1080p/cctv15.m3u8",  # add7 #7 md5:cfb782
+            "http://107.150.60.122/live/cctv15hd.m3u8",  # add7 #21 md5:523e9d
+        )),
+        ("CCTV-16 奥林匹克", (
+            "http://38.75.136.137:98/gslb/dsdqpub/cctv16hd.m3u8?auth=testpub",  # add7 #26 md5:c41e7f
+        )),
+        ("CCTV-4K 超高清", (
+            "http://192.151.150.154/live/cctv4k.m3u8",  # add7 #60 md5:1bae77
+        )),
+    ):
+        manual_backups.setdefault(_name, []).extend(_urls)
     for ch in channels:
         backups = manual_backups.get(ch["name"])
         if backups:
@@ -2611,6 +3087,33 @@ def build(args):
                 survivors.append(ch)
         channels = survivors
 
+    # 按台标改挂（用户 10-25「卫视频道，台标与频道不一致的，根据台标移入对应卫视频道」）。
+    # 位置在标清闸门之前：搬过去的这条线要在新台名下重新过一遍标清／strict_filter 两道闸，
+    # 而不是在旧台名下带着证据绕过去再原样塞进新台。
+    logo_moves = remount_by_logo(channels, load_wshi_moves(args.wshi_moves))
+
+    # 标清闸门（用户 10-25「全频道删除标清线路…删除没有线路的频道」）。
+    # 位置就这一处：在手工备用线之后、strict_filter 之前，摘线只留一个出口，
+    # 免得出现「这一处放行、那一处又判一遍」两套口径。
+    SD_DROPPED.clear()
+    SD_EXEMPT.clear()
+    heads = {ch["id"]: (ch["streams"] or [""])[0] for ch in channels}
+    if DROP_SD:
+        channels, sd_empty = drop_sd_lines(channels)
+        by_size = defaultdict(int)
+        for _, _, size in SD_DROPPED:
+            by_size["×".join(str(v) for v in size) if isinstance(size, tuple) else "标题写着标清"] += 1
+        print(f"[definition] 标清线路删除 {len(SD_DROPPED)} 条（{len({n for n, _, _ in SD_DROPPED})} 台），"
+              f"按尺寸分档：" + "、".join(f"{k} {v} 条" for k, v in sorted(by_size.items(), key=lambda kv: -kv[1]))
+              + f"；必留名单里整台都是标清、原样保留 {len(SD_EXEMPT)} 条")
+        if sd_empty:
+            print(f"[definition] 因标清摘空、整台删除 {len(sd_empty)} 台："
+                  + "、".join(sorted(sd_empty)[:15]) + (f"…另 {len(sd_empty) - 15} 台" if len(sd_empty) > 15 else ""))
+        moved = [ch["name"] for ch in channels
+                 if ch["category"] in RES_FIRST_CATS and ch["streams"] and ch["streams"][0] != heads.get(ch["id"])]
+        print(f"[definition] 组内按清晰度由高到低重排（{'、'.join(CATEGORY_NAMES[c] for c in RES_FIRST_CATS)}）："
+              f"{len(moved)} 台的第 1 条线换了，例：" + "、".join(moved[:8]))
+
     # 新判据三半，各自的作用域写清楚（见 strict_filter 的 docstring）：
     #   ①必看台「删除不能正常播放的线路」：台内只留有正常画面证据的线；
     #     一条都没有的台**先原样留着**，交给结尾 [check] 判红点名——不许让它悄悄消失，也不许拿坏线冒充可用。
@@ -2619,6 +3122,10 @@ def build(args):
     # 「待验证」分组从这一版起不再产生：以前是"没画面也留在目录里挪个组"，新判据是直接删。
     survivors, strict_stats = strict_filter(channels)
     channels = survivors
+    # 尺寸这一份按最后存下来的那些线算（strict_filter 还会摘一批），报数才和目录里的条数自洽。
+    line_quality = line_quality_map(channels)
+    print(f"[resolution] 随目录打进 APK 的每条线尺寸 {len(line_quality)} 条"
+          f"（选线面板按它标清晰度，没实测到的显示「未知」）")
     print(f"[strict] 必看台 {strict_stats['must_total']} 台：删掉没有画面证据的线路 {strict_stats['pruned_lines']} 条；"
           f"仍无可播画面的 {len(strict_stats['must_no_picture'])} 台 -> " +
           ("、".join(strict_stats['must_no_picture']) or "无"))
@@ -2670,6 +3177,17 @@ def build(args):
     # 所以进不了上面的自动黑名单；但电视上现在放的不是本台画面（用户 10-23 18:5x 现读）。
     # 目录侧由 dead_stream_prefixes 按台名摘；这里按地址拉黑，防设备端更新从 vbsky 捞回。
     user_flagged_blocks = {
+        "http://[2409:8087:1a01:df::4001]/PLTV/88888888/224/3221225655/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225651/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4023]/PLTV/88888888/224/3221225611/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4005]/PLTV/88888888/224/3221225613/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4017]/PLTV/88888888/224/3221225619/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4058]/PLTV/88888888/224/3221225620/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4014]/PLTV/88888888/224/3221225617/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225639/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4015]/PLTV/88888888/224/3221225641/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+        "http://[2409:8087:1a01:df::4011]/PLTV/88888888/224/3221225643/index.m3u8": "IPv6 2409 在此网络连续超时（用户 10-24「咪咕体育线路2 响应超时」）",
+
         stream_rules.canon("http://ali-m-l.cztv.com/channels/lantian/channel21/1080p.m3u8"):
             "画面是别的台（用户现读）",
         stream_rules.canon("http://bztv.tvbus.cc:8081/cdnlive/cctv8.m3u8"):
@@ -2695,6 +3213,10 @@ def build(args):
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "sourceNote": "频道与线路来自互联网公开 IPTV 列表，仅用于学习与个人测试；线路可能随时失效，应用会自动尝试备用线路。",
         "blockedLines": blocked,
+        "lineQuality": line_quality,
+        # 改挂记录与黑名单同一用途：公开列表明天还会按「旧台名」把这条地址再送一遍，
+        # 设备端合并时按它挡回，防止挂在错误台名下复活（用户 10-25「根据台标移入对应卫视频道」）。
+        "lineMoves": logo_moves,
         "categories": categories,
         "channels": channels,
     }
@@ -2790,8 +3312,20 @@ if __name__ == "__main__":
     ap.add_argument("--freeze", type=Path, action="append", default=None,
                     help="freeze_scan.py 的长窗冻帧结论（jsonl），可重复给多份；"
                          "只有分钟级确认「源没在给新画面」的那一档会删线＋拉黑")
+    ap.add_argument("--retest", type=Path, default=None,
+                    help="三轮全线路回测的汇总（tools/retest3_summary.py 的 --out 产物）")
+    ap.add_argument("--cctv3", type=Path, default=None,
+                    help="央视·卫视全线路三轮回测的删除清单（tools/.cache/cctv3/summary.json）："
+                         "≥3 轮都无本台台标、或三轮都没帧且无台标实证的线路")
+    ap.add_argument("--wshi-moves", type=Path, default=BASE / "tools" / "wshi_logo_moves.json",
+                    help="卫视「按台标改挂」的人工确认清单（json）：探测器 wshi_mismatch.py 挑出、"
+                         "单张角标复核过的地址才写进来。默认那份在 tools/ 下随仓库走，"
+                         "不放 tools/.cache/（那里被 .gitignore 收着，换机器就会把结论丢掉）")
     ap.add_argument("--keep-dead", action="store_true",
                     help="保留「对端明确答复了坏／画面是别的台」的线路（默认删掉，删空的频道整个消失）")
+    ap.add_argument("--keep-sd", action="store_true",
+                    help="保留标清线路（默认删掉：实测尺寸不到高清档、或清单标题写着「标清/SD」的线"
+                         "都不进目录。用户 10-25「全频道删除标清线路，未来新增的线路也不添加标清线路」）")
     ap.add_argument("--dry-run", action="store_true",
                     help="只算数不落盘：量统计与退出码时保护默认路径那份在库资产（给了 --out 也不写）")
     raise SystemExit(build(ap.parse_args()))

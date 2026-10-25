@@ -716,21 +716,50 @@ UE = "http://slow3.example.com/e.m3u8"
 health49 = {bc.stream_rules.canon(UB): {"verdict": "可取到分片", "elapsed_ms": 15000},
             bc.stream_rules.canon(UD): {"verdict": "可取到分片", "elapsed_ms": 15000},
             bc.stream_rules.canon(UE): {"verdict": "可取到分片", "elapsed_ms": 15000}}
-ch49 = row("甲测试台", [UA, UB, UC])
+ch49 = row("甲测试台", [UA, UB, UC], category="international", subgroup="新闻")
 chans49, moved49 = bc.move_slow_lines_back([ch49], health49, lambda n, u: False)
 check("49 甲：首分片 >10 秒的慢线挪到台内最后、其余保序",
       chans49[0]["streams"] == [UA, UC, UB] and moved49 == [("甲测试台", bc.stream_rules.canon(UB))],
       f"现序={chans49[0]['streams']} 挪={moved49}")
-ch49b = row("甲测试台2", [UA, UD])
+ch49b = row("甲测试台2", [UA, UD], category="international", subgroup="新闻")
 chans49b, moved49b = bc.move_slow_lines_back([ch49b], health49, lambda n, u: u == UD)
 check("49b 负对照：设备播过的慢线原地不动（「已播过不挪位」盖过甲）",
       chans49b[0]["streams"] == [UA, UD] and moved49b == [],
       f"现序={chans49b[0]['streams']} 挪={moved49b}")
-ch49c = row("甲测试台3", [UA, UE])
+ch49c = row("甲测试台3", [UA, UE], category="international", subgroup="新闻")
 chans49c, moved49c = bc.move_slow_lines_back([ch49c], health49, lambda n, u: False)
 check("49c 负对照：已排在末位的慢线不记进挪线名单（名单只记真要动的那批）",
       chans49c[0]["streams"] == [UA, UE] and moved49c == [],
       f"现序={chans49c[0]['streams']} 挪={moved49c}")
+# 用户 10-25 18:5x 点档「乙：清晰度优先」：这两组不挪慢线，其余组照旧挪（两格对照）
+ch49d = row("甲测试台4", [UA, UB, UC], category="cctv", subgroup="央视")
+chans49d, moved49d = bc.move_slow_lines_back([ch49d], health49, lambda n, u: False)
+check("49d 央视·卫视／地方组：慢线不挪台尾（清晰度优先），排原位、名单为空",
+      chans49d[0]["streams"] == [UA, UB, UC] and moved49d == [],
+      f"现序={chans49d[0]['streams']} 挪={moved49d}")
+ch49e = row("甲测试台5", [UA, UB, UC], category="sports", subgroup="国内体育")
+chans49e, moved49e = bc.move_slow_lines_back([ch49e], health49, lambda n, u: False)
+check("49e 正对照：体育组不在这条豁免里，慢线照旧挪到最后",
+      chans49e[0]["streams"] == [UA, UC, UB] and moved49e == [("甲测试台5", bc.stream_rules.canon(UB))],
+      f"现序={chans49e[0]['streams']} 挪={moved49e}")
+# 用户 10-25 18:5x 点档「乙：清晰度优先」的第二半：慢线只压同档内次序（三个对照）
+UF = "http://slowA.example.com/f.m3u8"
+UG = "http://fastA.example.com/g.m3u8"
+bc.HEALTH = {bc.stream_rules.canon(UF): {"verdict": "可取到分片", "elapsed_ms": 15000}}
+bc.DEVICE_PROOF = {}
+bc.FRAME_RES = {bc.stream_rules.canon(UF): [1920, 1090], bc.stream_rules.canon(UG): [1280, 738]}
+check("49f 慢线判据只认「>10 秒且不是设备播过」那一格",
+      bc.slow_penalty(UF, "甲测试台6") == 1 and bc.slow_penalty(UG, "甲测试台6") == 0,
+      f"慢={bc.slow_penalty(UF, '甲测试台6')} 快={bc.slow_penalty(UG, '甲测试台6')}")
+order49 = sorted([UG, UF], key=bc.res_first_key("甲测试台6"))
+check("49g 1920 慢线仍排在 1280 快线前面（慢线不跨清晰度档）",
+      order49 == [UF, UG], f"现序={order49}")
+bc.DEVICE_PROOF = {bc.stream_rules.canon(UF): "甲测试台6"}
+check("49h 负对照：设备播过的慢线不压（「已播过不挪位」）",
+      bc.slow_penalty(UF, "甲测试台6") == 0, f"慢={bc.slow_penalty(UF, '甲测试台6')}")
+bc.HEALTH = {}
+bc.FRAME_RES = {}
+bc.DEVICE_PROOF = {}
 bc.DROP_DEAD = False
 bc.HEALTH, bc.IDENTITY, bc.FRAME_PLACEHOLDER, bc.FRAME_RES, bc.FRESH_RES, bc.DEVICE_PROOF = {}, {}, {}, {}, {}, {}
 

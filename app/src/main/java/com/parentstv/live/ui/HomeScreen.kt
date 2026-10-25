@@ -112,13 +112,6 @@ fun HomeScreen(
         if (subgroup.isNotBlank()) prefs.setSubgroup(id, subgroup)
     }
 
-    fun selectSubgroup(subgroup: String) {
-        selectedSubgroup = subgroup
-        if (selectedCategoryId != FAVORITES_ID) {
-            prefs.setSubgroup(selectedCategoryId, subgroup)
-        }
-    }
-
     val isFavorites = selectedCategoryId == FAVORITES_ID
     val selectedDef = categoryDefs.firstOrNull { it.id == selectedCategoryId }
     val title = if (isFavorites) "我的收藏" else selectedDef?.name ?: "频道"
@@ -127,17 +120,14 @@ fun HomeScreen(
     } else {
         byCategory[selectedCategoryId].orEmpty()
     }
-    val subgroups = if (isFavorites) emptyList() else selectedDef?.subgroups.orEmpty()
-    val visibleChannels = if (isFavorites || subgroups.isEmpty() || selectedSubgroup.isBlank()) {
-        categoryChannels
-    } else {
-        categoryChannels.filter { it.subgroup == selectedSubgroup }
-    }
+    // 用户 10-24 18:3x「取消子分组」：主页那排省份/子类标签整块去掉，一个分类下的台按目录次序
+    // 一次全列出来（央视 23 → 卫视 → 4K，省份按目录里的次序）。子分组字段仍留在目录里给排序用。
+    val visibleChannels = categoryChannels
     val subtitle = when {
         isFavorites -> "播放时点按爱心，就能把喜欢的频道存在这里"
         selectedCategoryId == "cctv" -> "央视全套高清频道 · 全国省级卫视"
         selectedCategoryId == "local" ->
-            if (selectedSubgroup.isNotBlank()) "$selectedSubgroup · 地方频道" else "按省份整理的地方频道"
+            "按省份整理的地方频道"
         selectedCategoryId == "hktw" -> "香港 · 台湾 · 澳门 · 海外华人"
         selectedCategoryId == "featured" -> "影视轮播 · NewTV · CHC · 少儿"
         selectedCategoryId == "sports" -> "五星体育 · 咪咕直播 · 港台体育"
@@ -145,13 +135,7 @@ fun HomeScreen(
         else -> "电视直播"
     }
 
-    val initialCandidates = remember {
-        when {
-            isFavorites -> favoriteChannels
-            subgroups.isEmpty() || selectedSubgroup.isBlank() -> categoryChannels
-            else -> categoryChannels.filter { it.subgroup == selectedSubgroup }
-        }
-    }
+    val initialCandidates = remember { categoryChannels }
     val initialFocusId = remember {
         (if (prefs.rememberLastChannel) prefs.lastChannelId else null)
             ?.takeIf { id -> initialCandidates.any { it.id == id } }
@@ -212,35 +196,6 @@ fun HomeScreen(
                 subtitle = subtitle,
                 count = visibleChannels.size,
             )
-            if (subgroups.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 36.dp, end = 40.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (selectedCategoryId == "local") {
-                        Text(
-                            text = "省份",
-                            fontSize = 14.sp,
-                            color = TvColors.TextSecondary,
-                            modifier = Modifier.padding(end = 14.dp),
-                        )
-                    }
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        rowItems(subgroups, key = { it }) { subgroup ->
-                            SubgroupChip(
-                                label = subgroup,
-                                selected = subgroup == selectedSubgroup,
-                                onClick = { selectSubgroup(subgroup) },
-                            )
-                        }
-                    }
-                }
-            }
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(minSize = 210.dp),

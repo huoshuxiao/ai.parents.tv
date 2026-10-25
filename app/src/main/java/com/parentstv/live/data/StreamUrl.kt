@@ -125,6 +125,40 @@ object StreamUrl {
 }
 
 /**
+ * 标清这一档的名单外那道闸（用户 10-25 指令「全频道删除标清线路，未来新增的线路也不添加标清线路」）。
+ *
+ * 分工：构建侧（tools/build_catalog.py 的 `is_sd_line`）按**实测尺寸**＋清单标题摘，摘完的地址随
+ * `blockedLines` 打进 APK；设备端两道——
+ * ① [isSdTitle] 在解析公开列表时就挡「标题自己写着标清／SD」的那一进目录；
+ * ② [isSdResolution] 在「立即更新」探测那一刻挡「清单标题没写、但清单里的 RESOLUTION 只有标清档」的那一条
+ *   （列表明天还会把这些地址换个台名再送一遍，光靠标题挡不住）。
+ * 两处都只认独立一档的档名，不从 URL 里的 480/576 猜（那可能是端口或节目号）；
+ * 尺寸那一道的阈值与构建侧 `SD_MAX_HEIGHT`/`SD_MIN_WIDTH`、屏幕上 `qualityText` 同一把尺。
+ */
+object Definition {
+
+    private val sdTitle = Regex("""(^|[\s\-_/·(（\[])(标清|SD)($|[\s\-_/·)）\]])""", RegexOption.IGNORE_CASE)
+    private val res = Regex("""(\d+)\s*[x×]\s*(\d+)""")
+
+    /** 与 `tools/build_catalog.py` 的 SD_MAX_HEIGHT 同值：高到这一档以下算标清。 */
+    private const val SD_MAX_HEIGHT = 699
+
+    /** 与 `tools/build_catalog.py` 的 SD_MIN_WIDTH 同值：宽过这一档就不算标清（横屏高清优先）。 */
+    private const val SD_MIN_WIDTH = 1200
+
+    /** 清单标题里写着「标清／SD」这一档 ⇒ 这条线不往目录里加。 */
+    fun isSdTitle(name: String): Boolean = sdTitle.containsMatchIn(name)
+
+    /** 探测读到的最高一档是标清 ⇒ 这条线不留着。读不到尺寸（null）不算标清，别拿"没量到"当判坏。 */
+    fun isSdResolution(resolution: String?): Boolean {
+        val m = resolution?.let { res.find(it) } ?: return false
+        val w = m.groupValues[1].toIntOrNull() ?: return false
+        val h = m.groupValues[2].toIntOrNull() ?: return false
+        return h in 1..SD_MAX_HEIGHT && w < SD_MIN_WIDTH
+    }
+}
+
+/**
  * 实测连不通、公开源又会反复带回的线路。写原始写法即可，匹配走 [StreamUrl.canonical]，
  * 同一地址的转义/大小写/默认端口变体不用再各列一条。
  * 只按整条地址拉黑，不做主机级前缀拉黑：同主机其他节目号可能在不同网络上可用。
@@ -148,6 +182,9 @@ object DeadStreams {
  * 挂在 A 台名下、抽帧认台标其实是 B 台画面的线。公开源会反复把它带回错的频道，
  * 只改内置目录挡不住下一次自动更新（设备上 00:04 现读：这条线仍在「西藏卫视」第 1 条），
  * 所以合并时按规范地址改挂到真正的频道，并放在最前面。
+ *
+ * 这里只留 10-21/10-24 手抄的那几条历史；新的「按台标改挂」结论随目录走
+ * （[ChannelCatalog.lineMoves]，构建层按台标打分＋人工看单帧复核后写入），查的时候那份优先。
  */
 object RelabeledStreams {
 
@@ -169,12 +206,19 @@ object RelabeledStreams {
 
     private val byKey: Map<String, String> = targets.associate { (url, channel) -> keyOf(url) to channel }
 
-    /** 这条地址真身属于哪个频道；null 表示没有改挂记录。 */
-    fun trueChannel(stream: String): String? = byKey[keyOf(stream)]
+    /** 这条地址真身属于哪个频道；null 表示没有改挂记录。
+     *
+     *  目录里那份（`lineMoves`，构建按台标证据算出来的）优先于下面手抄的 `targets`：
+     *  用户 10-25「卫视频道，台标与频道不一致的，根据台标移入对应卫视频道」之后，
+     *  新的改挂结论一律随 channels.json 走，`targets` 只留 10-21/10-24 那几条历史。
+     */
+    fun trueChannel(stream: String, catalogMoves: Map<String, LineMove> = emptyMap()): String? =
+        catalogMoves[StreamUrl.canonical(stream)]?.to ?: byKey[keyOf(stream)]
 
     /** 在 [channelName] 名下看到它就该摘掉——它出的是别的台的画面。 */
-    fun belongsElsewhere(channelName: String, stream: String): Boolean {
-        val owner = trueChannel(stream) ?: return false
+    fun belongsElsewhere(channelName: String, stream: String,
+                         catalogMoves: Map<String, LineMove> = emptyMap()): Boolean {
+        val owner = trueChannel(stream, catalogMoves) ?: return false
         return ChannelName.normalize(owner) != ChannelName.normalize(channelName)
     }
 

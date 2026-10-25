@@ -69,18 +69,20 @@ fun SettingsScreen(
     onRefreshLines: () -> Unit,
     onBack: () -> Unit,
     onClearFavorites: () -> Unit,
+    onManualLinesChanged: () -> Unit = {},
 ) {
     val backFocus = remember { FocusRequester() }
     val keyFocus = remember { FocusRequester() }
     var confirmClear by remember { mutableStateOf(false) }
     var showKeySettings by remember { mutableStateOf(false) }
+    var showTencentSports by remember { mutableStateOf(false) }
     var keyDialogOpened by remember { mutableStateOf(false) }
     var rememberLastChannel by remember { mutableStateOf(prefs.rememberLastChannel) }
     var epgEnabled by remember { mutableStateOf(prefs.epgEnabled) }
     var showResolution by remember { mutableStateOf(prefs.showVideoResolution) }
     var lineSwitchSeconds by remember { mutableStateOf(prefs.lineSwitchSeconds) }
     BackHandler {
-        if (!showKeySettings && !confirmClear) onBack()
+        if (!showKeySettings && !confirmClear && !showTencentSports) onBack()
     }
     val generatedText = remember(catalog.generatedAt) {
         BeijingTime.formatIso(catalog.generatedAt, "yyyy-MM-dd HH:mm") ?: "未知"
@@ -220,6 +222,32 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(14.dp))
 
+            SettingsCard(title = "腾讯体育（手动挂）", modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "按场次挂一条临时线",
+                            color = TvColors.TextPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "腾讯体育不是 24 小时频道，地址开赛才有。打开后选一场免费比赛点「挂」，抓到的线 6 小时后自动摘掉；SVIP/用券场次不抓。",
+                            color = TvColors.TextSecondary,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    PlayerActionButton(
+                        icon = Icons.Rounded.Refresh,
+                        label = "打开",
+                        onClick = { showTencentSports = true },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
             SettingsCard(title = "播放与界面", modifier = Modifier.fillMaxWidth()) {
                 PrefSwitchRow(
                     title = "开机回到上次频道",
@@ -331,6 +359,13 @@ fun SettingsScreen(
         KeySettingsDialog(
             prefs = prefs,
             onDismiss = { showKeySettings = false },
+        )
+    }
+
+    if (showTencentSports) {
+        TencentSportsDialog(
+            onDismiss = { showTencentSports = false },
+            onLinesChanged = onManualLinesChanged,
         )
     }
 }

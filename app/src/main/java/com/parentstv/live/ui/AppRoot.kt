@@ -119,13 +119,10 @@ fun AppRoot() {
 
     /** 数字键跳到别的组时，队列换成那一组——与主页点进去时拿到的队列同一个口径。 */
     fun queueOf(channel: TvChannel): List<TvChannel> {
-        val inCategory = currentCatalog.playableChannels().filter { it.category == channel.category }
-        val subgroups = currentCatalog.categories.firstOrNull { it.id == channel.category }?.subgroups
-        return if (subgroups.isNullOrEmpty() || channel.subgroup.isBlank()) {
-            inCategory
-        } else {
-            inCategory.filter { it.subgroup == channel.subgroup }
-        }
+        // 用户 10-24 18:3x「取消子分组」：主页不再按省份/子类切一刀，播放器这一侧的队列
+        // 也跟着变成「整个分类」。再按 channel.subgroup 过滤会出现「主页看得到、上下键翻不到」
+        // 的两套口径（央视·卫视那 62 台尤其明显）。
+        return currentCatalog.playableChannels().filter { it.category == channel.category }
     }
 
     when (val current = screen) {
@@ -157,6 +154,12 @@ fun AppRoot() {
                 prefs.clearFavorites()
                 favorites = emptySet()
             },
+            // 手动挂了一条腾讯体育临时线之后立刻重读目录，回首页就能在体育组最后一个看到它。
+            onManualLinesChanged = {
+                scope.launch {
+                    runCatching { repository.load() }.getOrNull()?.let { catalog = it }
+                }
+            },
         )
 
         is Screen.Player -> PlayerScreen(
@@ -167,18 +170,14 @@ fun AppRoot() {
                 markWatched(target)
                 screen = Screen.Player(target, queueOf(target))
             },
-            categoryName = currentCatalog.categoryName(current.channel.category),
+            // 分组名按**正在播这一台**的 category 现查：数字键是在播放器内部换台的，
+            // 传进来的 `current.channel` 还停在进播放器那一台，写成值就会滞后
+            //（10-25 装机实测：从 Animal Planet 按 14 跳到 CCTV-14，画面那行显示「国际频道」）。
+            categoryNameOf = currentCatalog::categoryName,
+            // 选线面板要按地址查构建时实测的尺寸，查询能力就是目录上的 qualityOf。
+            lineQualityOf = currentCatalog::qualityOf,
             favorites = favorites,
             prefs = prefs,
-            onToggleFavorite = { channel ->
-                val next = if (channel.id in favorites) {
-                    favorites - channel.id
-                } else {
-                    favorites + channel.id
-                }
-                favorites = next
-                prefs.favorites = next
-            },
             onChannelChanged = { channel -> markWatched(channel) },
             onBack = { screen = Screen.Home },
         )

@@ -2,6 +2,7 @@ package com.parentstv.live.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -97,6 +98,96 @@ class CatalogMergeTest {
         assertEquals(listOf(played, first, second), merged)
     }
 
+    /**
+     * 用户 2026-10-25「央视·卫视、地方频道，线路按清晰度由高到低排序，"清晰度排序"压过播过置顶」：
+     * 打进 APK 的那一份次序就是清晰度序，所以设备端合并／探测这两处都不许再把它重排。
+     * 六格：两组豁免（cctv／local）各一格、两组不豁免（体育／国际）各一格、
+     * 分组认不出（category=null）一格（必须仍按 10-22 老规矩置顶）、
+     * 探测那一棒一格。同一份输入只改 category 就必须出现两种结果，否则这六格是恒真的。
+     */
+    private val resFirstFirst = "http://74.91.26.218:82/live/cctv3hd.m3u8"
+    private val resFirstSecond = "http://39.135.138.58:18890/PLTV/88888888/224/3221225634/index.m3u8"
+    private val resFirstPlayed = "http://222.169.85.8:9901/tsfile/live/0003_1.m3u8?key=txiptv&playlive=1&authid=0"
+
+    @Test
+    fun cctvGroupKeepsTheResolutionOrderEvenWithAPlayedLine() {
+        val merged = CatalogMerge.streams("CCTV-3 综艺", listOf(resFirstFirst, resFirstSecond, resFirstPlayed),
+            emptyList(), resFirstPlayed, category = "cctv")
+        assertEquals("央视·卫视：播过那条不再置顶，目录那一份次序原样留着",
+            listOf(resFirstFirst, resFirstSecond, resFirstPlayed), merged)
+    }
+
+    @Test
+    fun localGroupKeepsTheResolutionOrderEvenWithAPlayedLine() {
+        val merged = CatalogMerge.streams("辽源新闻综合", listOf(resFirstFirst, resFirstSecond, resFirstPlayed),
+            emptyList(), resFirstPlayed, category = "local")
+        assertEquals(listOf(resFirstFirst, resFirstSecond, resFirstPlayed), merged)
+    }
+
+    @Test
+    fun sportsGroupStillPutsThePlayedLineFirst() {
+        // 豁免只给用户点名的两组：体育／国际那两组仍按 10-22 走。
+        val merged = CatalogMerge.streams("辽宁体育", listOf(resFirstFirst, resFirstSecond, resFirstPlayed),
+            emptyList(), resFirstPlayed, category = "sports")
+        assertEquals(listOf(resFirstPlayed, resFirstFirst, resFirstSecond), merged)
+        val intl = CatalogMerge.streams("CGTN", listOf(resFirstFirst, resFirstSecond, resFirstPlayed),
+            emptyList(), resFirstPlayed, category = "intl")
+        assertEquals(listOf(resFirstPlayed, resFirstFirst, resFirstSecond), intl)
+    }
+
+    @Test
+    fun unknownCategoryFallsBackToPinningThePlayedLine() {
+        // 认不出分组就别动老规矩：宁可置顶，也不把父母天天看那条挪到后面。
+        val merged = CatalogMerge.streams("CCTV-3 综艺", listOf(resFirstFirst, resFirstSecond, resFirstPlayed),
+            emptyList(), resFirstPlayed, category = null)
+        assertEquals(listOf(resFirstPlayed, resFirstFirst, resFirstSecond), merged)
+        // 牙齿：同一份输入只有 category 不同，两次的结果必须不同（不然上面几格是恒真）
+        val exempt = CatalogMerge.streams("CCTV-3 综艺", listOf(resFirstFirst, resFirstSecond, resFirstPlayed),
+            emptyList(), resFirstPlayed, category = "cctv")
+        assertNotEquals("cctv 那一档必须真的换了行为", merged, exempt)
+    }
+
+    @Test
+    fun probeOrderFollowsTheSameCategoryRule() {        // 「立即更新」探测完那一棒：cctv/local 让探到的那条（清晰度序里第一条能用的）占第 1 位，
+        // 别的组仍把播过那条压回第 1 位。
+        val streams = listOf(resFirstFirst, resFirstSecond, resFirstPlayed)
+        assertEquals(listOf(resFirstSecond, resFirstFirst, resFirstPlayed),
+            CatalogMerge.probeOrder(streams, 1, resFirstPlayed, "cctv"))
+        assertEquals(listOf(resFirstPlayed, resFirstSecond, resFirstFirst),
+            CatalogMerge.probeOrder(streams, 1, resFirstPlayed, "sports"))
+    }
+
+    /**
+     * 设备底稿是上一版落下的那份缓存，里面「播过那条」已经被顶到第 1 位了——
+     * 只关掉置顶不够，那条会一直留在第 1 位。这两格钉的就是「按打进 APK 的那一份归位」。
+     */
+    @Test
+    fun aLinePinnedByTheOldBuildGetsPutBackWhereTheCatalogSays() {
+        val asset = listOf(resFirstFirst, resFirstSecond, resFirstPlayed)
+        val cached = listOf(resFirstPlayed, resFirstFirst, resFirstSecond)   // 旧版本置顶后的样子
+        val merged = CatalogMerge.streams("CCTV-3 综艺", cached, emptyList(), resFirstPlayed,
+            category = "cctv", assetOrder = asset)
+        assertEquals("央视·卫视：按内置目录归位", asset, merged)
+        // 牙齿：同一份输入只把 assetOrder 摘掉，那条就还赖在第 1 位——证明归位的是这一行
+        val noAnchor = CatalogMerge.streams("CCTV-3 综艺", cached, emptyList(), resFirstPlayed,
+            category = "cctv")
+        assertEquals(cached, noAnchor)
+        // 别的组给了 assetOrder 也不许动它：仍按 10-22 那条把播过的顶到第 1 位
+        val sports = CatalogMerge.streams("辽宁体育", cached, emptyList(), resFirstPlayed,
+            category = "sports", assetOrder = asset)
+        assertEquals(cached, sports)
+    }
+
+    @Test
+    fun linesTheCatalogDoesNotKnowStayBehindTheKnownOnes() {
+        // 公开源这次新带回来的线（目录里没有）不许插到已知线前面，它们之间保持原相对次序
+        val asset = listOf(resFirstFirst, resFirstPlayed)
+        val newcomer = "http://103.185.24.134:3001/CCTV3-HD/index.m3u8"
+        val merged = CatalogMerge.streams("CCTV-3 综艺", listOf(resFirstPlayed, resFirstFirst),
+            listOf(newcomer), resFirstPlayed, category = "cctv", assetOrder = asset)
+        assertEquals(listOf(resFirstFirst, resFirstPlayed, newcomer), merged)
+    }
+
     @Test
     fun playableLineMatchesEvenWhenWrittenDifferently() {
         // 记下来的地址写法可能和目录里不一样（百分号转义/默认端口），归一后是同一条就算命中。
@@ -159,6 +250,50 @@ class CatalogMergeTest {
         // 负对照：同一个黑名单、没播过记录时，那条线必须被挡掉（不然这一格就成了恒真）。
         assertEquals(emptyList<String>(),
             CatalogMerge.streams("CCTV-3 综艺", emptyList(), listOf(played), null, blocked))
+    }
+
+    /**
+     * 用户 2026-10-25 指令「卫视频道，台标与频道不一致的，根据台标移入对应卫视频道」在设备端的那一半：
+     * 构建已经把这条地址搬进台标对应的那一台，可公开列表下一次还会按**旧台名**再送一遍过来。
+     * 挡它的是目录里的 lineMoves（随 channels.json 装进 APK），不是只改一次内置目录。
+     */
+    @Test
+    fun catalogLineMoveRefusesTheOldChannelName() {
+        val moved = "http://148.135.93.213/live.php?id=hljws"
+        val moves = mapOf(StreamUrl.canonical(moved) to LineMove(from = "黑龙江卫视", to = "辽宁卫视"))
+        val good = "http://39.135.138.58:18890/PLTV/88888888/224/3221225723/index.m3u8"
+        val back = CatalogMerge.streams("黑龙江卫视", listOf(good), listOf(moved), null, emptySet(), moves)
+        assertEquals("旧台名再送一次也要被摘掉", listOf(good), back)
+        val forward = CatalogMerge.streams("辽宁卫视", listOf(moved), emptyList(), null, emptySet(), moves)
+        assertEquals("台标对应的那一台要留下它", listOf(moved), forward)
+        // 负对照：同一份地址、把 lineMoves 换成空表 ⇒ 那条线必须活着进来。
+        // 没有这一格，这一格就成了恒真（摘掉它的可能是容器规则或别的 filter）。
+        assertEquals("没有改挂记录时这条线本该留下",
+            listOf(good, moved),
+            CatalogMerge.streams("黑龙江卫视", listOf(good), listOf(moved), null, emptySet(), emptyMap()))
+    }
+
+    @Test
+    fun catalogLineMoveWinsOverTheHandwrittenRoster() {
+        // 两条名册都可能写同一个地址（手抄那份是 10-21/10-24 的历史）。口径只留一个：
+        // 目录那份优先——它是每次重建按现读证据算出来的，手抄那份不会自己更新。
+        val url = "http://112.27.5.218:9901/tsfile/live/0111_1.m3u8?key=txiptv&playlive=1&authid=0"
+        assertEquals("没有目录记录时用手抄那份", "四川卫视", RelabeledStreams.trueChannel(url))
+        val moves = mapOf(StreamUrl.canonical(url) to LineMove(from = "西藏卫视", to = "重庆卫视"))
+        assertEquals("目录记录要盖过手抄", "重庆卫视", RelabeledStreams.trueChannel(url, moves))
+        assertTrue("改挂后挂在四川卫视名下也该摘掉",
+            RelabeledStreams.belongsElsewhere("四川卫视", url, moves))
+    }
+
+    @Test
+    fun oldCacheWithoutLineMovesDecodesToEmptyMap() {
+        // 设备上那份 channels_live.json 是旧版写的，没有 lineMoves 这一格；解码不许整片失败。
+        val text = """{"schemaVersion":1,"generatedAt":"2026-10-25T01:00:00Z","blockedLines":{},
+            "channels":[{"id":"x1","name":"某某卫视","category":"satellite","streams":["http://a.example/1.m3u8"]}]}"""
+        val catalog = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .decodeFromString(ChannelCatalog.serializer(), text)
+        assertTrue("旧缓存读出来是空表，不是崩溃", catalog.lineMoves.isEmpty())
+        assertEquals(1, catalog.channels.size)
     }
 
     @Test

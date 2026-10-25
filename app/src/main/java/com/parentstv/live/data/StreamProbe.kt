@@ -24,6 +24,10 @@ object StreamProbe {
         val segmentMs: Long?,
         val checkedAt: Long,
         val error: String?,
+        // 清单里写着的最高一档分辨率（如 "1920×1080"）。只有多码率清单（带 #EXT-X-STREAM-INF）
+        // 才写得出来；直接给媒体分片的源在这一层没有分辨率，界面显示「清晰度未知」，
+        // 等真正播放后由播放器报的真实解码尺寸补上（用户 10-24 18:3x「线路选择加清晰度」）。
+        val resolution: String? = null,
     ) {
         /** 界面只许对这一格说「可用」；清单通了但画面取不到的是另一种颜色。 */
         val playable: Boolean get() = responseMs != null && segmentMs != null && error == null
@@ -40,6 +44,34 @@ object StreamProbe {
 
     suspend fun probe(url: String): Result = withContext(Dispatchers.IO) { probeBlocking(url) }
 
+    /**
+     * 预热「下一个要看的那条线」：把清单、变体、首片各走一遍，让 DNS/TCP/TLS 与分片路径先热起来。
+     * 只取 64 KB、不判断可用性、不写任何状态、失败当没发生（换台时该连的还得连）。
+     *
+     * 为什么不做「预加载整段视频」：Media3 的 HLS 在一条线路上一次只取一个分片，
+     * 想并行下载得另起一个播放器实例（电视盒内存与解码器都只有一份），得不偿失；
+     * 能拿到的是"冷启动那 1～2 秒"的省下（用户 10-24 18:3x「缓冲中/正在连接」）。
+     */
+    suspend fun prefetch(url: String) = withContext(Dispatchers.IO) {
+        runCatching {
+            val manifest = fetch(url, MANIFEST_LIMIT, PREFETCH_CONNECT_MS, PREFETCH_READ_MS)
+            if (manifest.error != null) return@runCatching
+            var base = manifest.finalUrl
+            var playlist = manifest.body.toString(Charsets.ISO_8859_1).removePrefix("\uFEFF")
+            if (classify(playlist) != Kind.PLAYLIST) return@runCatching
+            val variants = variantRefs(playlist)
+            if (variants.isNotEmpty()) {
+                val variant = fetch(resolve(base, variants.last()), MANIFEST_LIMIT, PREFETCH_CONNECT_MS, PREFETCH_READ_MS)
+                if (variant.error != null) return@runCatching
+                base = variant.finalUrl
+                playlist = variant.body.toString(Charsets.ISO_8859_1).removePrefix("\uFEFF")
+            }
+            val ref = segmentRefs(playlist).lastOrNull() ?: return@runCatching
+            fetch(resolve(base, ref), PREFETCH_BYTES, PREFETCH_CONNECT_MS, PREFETCH_READ_MS)
+        }
+        Unit
+    }
+
     private fun probeBlocking(url: String): Result {
         val manifest = fetch(url, MANIFEST_LIMIT, CONNECT_MS, READ_MS)
         val manifestAt = System.currentTimeMillis()
@@ -47,7 +79,7 @@ object StreamProbe {
 
         val text = manifest.body.toString(Charsets.ISO_8859_1).removePrefix("\uFEFF")
         return when (classify(text)) {
-            Kind.PLAYLIST -> probeMediaFromPlaylist(manifest, text, manifestAt)
+            Kind.PLAYLIST -> probeMediaFromPlaylist(manifest, text, manifestAt, maxResolution(text))
             Kind.HTML -> Result(null, null, manifestAt, "返回网页")
             Kind.EMPTY -> Result(null, null, manifestAt, "无数据")
             // 裸 TS／MP4 直连型：这一把读到的就是媒体字节，不必再取第二层。
@@ -90,21 +122,28 @@ object StreamProbe {
         return true
     }
 
-    private fun probeMediaFromPlaylist(manifest: Step, text: String, manifestAt: Long): Result {
+    private fun probeMediaFromPlaylist(
+        manifest: Step,
+        text: String,
+        manifestAt: Long,
+        resolution: String? = null,
+    ): Result {
         var base = manifest.finalUrl
         var playlist = text
+        var res = resolution
         val variants = variantRefs(playlist)
         if (variants.isNotEmpty()) {
             val variant = fetch(resolve(base, variants.last()), MANIFEST_LIMIT, CONNECT_MS, READ_MS)
-            if (variant.error != null) return Result(manifest.ms, null, variant.at, "变体${variant.error}")
+            if (variant.error != null) return Result(manifest.ms, null, variant.at, "变体${variant.error}", res)
             val variantText = variant.body.toString(Charsets.ISO_8859_1).removePrefix("\uFEFF")
-            if (classify(variantText) != Kind.PLAYLIST) return Result(manifest.ms, null, variant.at, "变体非清单")
+            if (classify(variantText) != Kind.PLAYLIST) return Result(manifest.ms, null, variant.at, "变体非清单", res)
             base = variant.finalUrl
             playlist = variantText
+            if (res == null) res = maxResolution(variantText)
         }
 
         val refs = segmentRefs(playlist)
-        if (refs.isEmpty()) return Result(manifest.ms, null, manifestAt, "清单无分片")
+        if (refs.isEmpty()) return Result(manifest.ms, null, manifestAt, "清单无分片", res)
 
         var lastError = "分片取不到"
         for (ref in refs) {
@@ -120,8 +159,8 @@ object StreamProbe {
                 }
                 // 分片里再套一层清单：跟着它再走一次，别把能播的线判死。
                 Kind.PLAYLIST -> {
-                    val nested = probeMediaFromPlaylist(segment, segment.body.toString(Charsets.ISO_8859_1), segment.at)
-                    if (nested.playable) return Result(manifest.ms, nested.segmentMs, nested.checkedAt, null)
+                    val nested = probeMediaFromPlaylist(segment, segment.body.toString(Charsets.ISO_8859_1), segment.at, res)
+                    if (nested.playable) return Result(manifest.ms, nested.segmentMs, nested.checkedAt, null, nested.resolution ?: res)
                     lastError = nested.error ?: "分片是清单"
                     continue
                 }
@@ -132,14 +171,22 @@ object StreamProbe {
                         // 取到字节 ≠ 电视上有画面，接着试下一条，别把它报成「可用」。
                         container != null -> lastError = "容器不支持：$container"
                         segment.body.size >= MIN_MEDIA_BYTES ->
-                            return Result(manifest.ms, segment.ms, segment.at, null)
+                            return Result(manifest.ms, segment.ms, segment.at, null, res)
                         else -> lastError = "分片太小"
                     }
                 }
             }
         }
-        return Result(manifest.ms, null, System.currentTimeMillis(), lastError)
+        return Result(manifest.ms, null, System.currentTimeMillis(), lastError, res)
     }
+
+    /** 多码率清单里最高那一档（按像素数比）。没有 RESOLUTION 行就返回 null。 */
+    internal fun maxResolution(text: String): String? =
+        Regex("RESOLUTION=(\\d+)x(\\d+)").findAll(text)
+            .map { it.groupValues[1].toIntOrNull() to it.groupValues[2].toIntOrNull() }
+            .filter { (w, h) -> w != null && h != null && w > 0 && h > 0 }
+            .maxByOrNull { (w, h) -> w!! * h!! }
+            ?.let { (w, h) -> "${w}×${h}" }
 
     private enum class Kind { PLAYLIST, HTML, EMPTY, MEDIA }
 
@@ -251,6 +298,9 @@ object StreamProbe {
     private const val MANIFEST_LIMIT = 16_384
     private const val SEGMENT_LIMIT = 8_192
     private const val MIN_MEDIA_BYTES = 1_024
+    private const val PREFETCH_BYTES = 64 * 1024
+    private const val PREFETCH_CONNECT_MS = 3_000
+    private const val PREFETCH_READ_MS = 8_000
 
     private const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 13; Android TV) AppleWebKit/537.36 " +

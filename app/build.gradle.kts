@@ -13,8 +13,8 @@ android {
         applicationId = "com.parentstv.live"
         minSdk = 23
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.2.0"
+        versionCode = 14
+        versionName = "1.3.1"
     }
 
     buildTypes {
