@@ -177,6 +177,33 @@ def kill_process_group(process: subprocess.Popen) -> None:
         pass
 
 
+def kill_stray_vlc(work_dir: Path) -> None:
+    """snap 的 vlc 包装器会把真正的 vlc 留在原地（ppid 变 1），killpg 只杀得到包装器。
+
+    实测残留：13 个 vlc 常驻近 2 小时，仍占着源站连接（`--pidfile` 被 snap 吞掉、文件压根没生成）。
+    这里按 /proc 精确匹配：argv[0] 是 vlc 且参数里逐字有本格的 work_dir（`--scene-path` 的值），
+    两条同时成立才杀——别的窗口/别人的 vlc 参数不同，碰不到；本进程自己是 python，也不会自匹配。
+    """
+    wanted = str(work_dir)
+    me = os.getpid()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == me:
+            continue
+        try:
+            parts = (entry / "cmdline").read_bytes().decode("utf-8", "replace").split("\0")
+        except OSError:
+            continue
+        if not parts or "vlc" not in parts[0] or wanted not in parts:
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def capture_frames(url: str, work_dir: Path, timeout_seconds: int, native: bool = False) -> dict:
     """抽帧。native=True 时不缩放，jpg 的尺寸就是这条流的真实画面尺寸。
 
@@ -229,6 +256,7 @@ def capture_frames(url: str, work_dir: Path, timeout_seconds: int, native: bool 
     finally:
         if process.poll() is None:
             kill_process_group(process)
+        kill_stray_vlc(work_dir)
     frames = sorted(work_dir.glob("frame_*.jpg"))
     elapsed_ms = int((time.monotonic() - started) * 1000)
     return {

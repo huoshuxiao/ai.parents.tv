@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import contextlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -125,7 +126,11 @@ kt = (BASE / "app/src/main/java/com/parentstv/live/data/Models.kt").read_text(en
 check("E5 设备端读的字段名与 JSON 键名一致（不是构建写了没人读）",
       re.search(r"val lineMoves: Map<String, LineMove>", kt) is not None, True)
 merger = (BASE / "app/src/main/java/com/parentstv/live/data/CatalogUpdater.kt").read_text(encoding="utf-8")
-check("E6 合并那一步真把 lineMoves 传了进去", "blocked, moves)" in merger, True)
+# 锚点写成"位置"而不是"整串收尾"：v1.3.1 那次给这个调用加了第 4 个实参（channel.category），
+# 老锚点 `blocked, moves)` 当场判红——红的是尺子旧了，不是功能断了。
+# 这一条仍然有牙：`moves` 一旦从 `blocked` 后面掉下去（改调用顺序/整个摘掉）就不匹配。
+check("E6 合并那一步真把 lineMoves 传了进去",
+      re.search(r"\bblocked,\s*moves\b", merger) is not None, True)
 check("E7 --wshi-moves 默认值指向随仓库走的那份（不是 tools/.cache/）",
       'BASE / "tools" / "wshi_logo_moves.json"' in source, True)
 
@@ -147,7 +152,19 @@ check("F3 负对照：没有改挂记录时报「无冲突」，且照样数得�
 # ── G：清单本身（在库那份）读得动、且默认是空的 ────────────────────────────────
 loaded = bc.load_wshi_moves(BASE / "tools/wshi_logo_moves.json")
 check("G1 在库那份清单读得动", isinstance(loaded, dict), True)
-check("G2 现在还没有确认的改挂（本批只做能力，不凭空搬线）", loaded, {})
+# G2 从 10-27 起钉的不是"空表"，而是"名册里恰好这一枚"——多一枚、少一枚、换台名都判红。
+# 这一枚是用户指令「东方卫视 线1，移到 地方频道」落进来的（见 CHANGELOG 追加七十七）。
+LIVE_MOVED_URL = "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8"
+check("G2 在库名册恰好一枚改挂：东方卫视→新纪实、且带 cross_group",
+      {k: (v["from"], v["to"], v["cross_group"]) for k, v in loaded.items()},
+      {LIVE_MOVED_URL: ("东方卫视", "新纪实", True)})
+check("G2b 落盘给设备端的那格不许带 cross_group（Models.kt 的 LineMove 只有 from/to/evidence）",
+      sorted(bc.remount_by_logo(
+          [row("东方卫视", [LIVE_MOVED_URL, KEPT_URL]),
+           row("新纪实", [], subgroup="上海", category="local")],
+          {canon(LIVE_MOVED_URL): {"from": "东方卫视", "to": "新纪实",
+                                   "evidence": "e", "cross_group": True}})[canon(LIVE_MOVED_URL)]),
+      ["evidence", "from", "to"])
 check("G3 清单缺文件时返回空表而不是崩", bc.load_wshi_moves(BASE / "tools/不存在.json"), {})
 check("G3b 没给路径（None）也返回空表", bc.load_wshi_moves(None), {})
 
@@ -164,6 +181,56 @@ with contextlib.redirect_stdout(buf4):
 check("G5 负对照：缺地址那条也是同样点名（两条都各点一次名）",
       buf4.getvalue().count("[warn]"), 2)
 junk.unlink()
+
+# ── X：跨组改挂那一枚放行开关（10-27 放宽，用户指令「东方卫视 线1，移到 地方频道」）──────
+# 放宽类判据按规矩配"放行 1／判红 5"：正对照证明那一键真在放行，五格负对照各挡一种说谎——
+# 缺键（开关其实没接线）、显式 False、文件里写字符串 "false"（bool("false") 是 True 的经典坑）、
+# 目标台不存在（一键就能凭空造台）、以及拒绝时顺手改了线路（回滚不干净）。
+def x_channels():
+    return [row("东方卫视", [LIVE_MOVED_URL, KEPT_URL]),
+            row("新纪实", [], subgroup="上海", category="local")]
+
+
+def x_spec(**over):
+    spec = {"from": "东方卫视", "to": "新纪实", "evidence": "清单三层现读＋用户指令"}
+    spec.update(over)
+    return {canon(LIVE_MOVED_URL): spec}
+
+
+x_ch, x_out = x_channels(), None
+bufx = io.StringIO()
+with contextlib.redirect_stdout(bufx):
+    x_res = bc.remount_by_logo(x_ch, x_spec(cross_group=True))
+x_by = {c["name"]: c["streams"] for c in x_ch}
+check("X1 显式 cross_group ⇒ 跨组放行（源台摘掉、目标台接住）",
+      (len(x_res), x_by["东方卫视"], x_by["新纪实"]), (1, [KEPT_URL], [LIVE_MOVED_URL]))
+check("X1b 放行时要自己念一句「这是跨组」", "跨组改挂被允许" in bufx.getvalue(), True)
+
+x_ch2 = x_channels()
+_, out_x2 = run(x_ch2, x_spec())
+check("X2 缺 cross_group 这一键 ⇒ 仍按老规矩拒绝", "不是卫视组内部" in out_x2, True)
+check("X2b 拒绝时两条线路一字未动（回滚干净）",
+      [c["streams"] for c in x_ch2], [[LIVE_MOVED_URL, KEPT_URL], []])
+x_ch3 = x_channels()
+_, out_x3 = run(x_ch3, x_spec(cross_group=False))
+check("X3 清单显式写 False ⇒ 同样拒绝（不许把缺键和写否当成一回事）",
+      ("不是卫视组内部" in out_x3, x_ch3[0]["streams"]), (True, [LIVE_MOVED_URL, KEPT_URL]))
+
+x_junk = BASE / "tools/.cache/fixture_wshi_moves_crossgroup.json"
+x_junk.write_text(json.dumps({"moves": [
+    {"url": "http://10.0.0.7:8080/live/hljws.m3u8", "from": "东方卫视", "to": "新纪实", "cross_group": "false"},
+    {"url": "http://10.0.0.8:8080/live/other.m3u8", "from": "东方卫视", "to": "新纪实", "cross_group": "true"}]}),
+    encoding="utf-8")
+x_loaded = bc.load_wshi_moves(x_junk)
+check("X4 文件里写字符串 \"false\" ⇒ 严格解析成不允许（bool(\"false\") 是 True，这个坑要挡住）",
+      [x_loaded[canon("http://10.0.0.7:8080/live/hljws.m3u8")]["cross_group"],
+       x_loaded[canon("http://10.0.0.8:8080/live/other.m3u8")]["cross_group"]], [False, True])
+x_junk.unlink()
+
+x_ch5 = [row("东方卫视", [LIVE_MOVED_URL, KEPT_URL])]
+_, out_x5 = run(x_ch5, x_spec(to="没有这个台", cross_group=True))
+check("X5 带着 cross_group 也不能凭空造台：目标台不存在照样拒绝",
+      ("[拒绝]" in out_x5, x_ch5[0]["streams"]), (True, [LIVE_MOVED_URL, KEPT_URL]))
 
 print(f"[logo-move] 跑了 {ran} 格，失败 {len(failures)} 格")
 for f in failures:

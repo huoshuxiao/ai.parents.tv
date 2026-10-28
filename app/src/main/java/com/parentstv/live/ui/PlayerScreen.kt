@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -73,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -162,8 +164,22 @@ fun PlayerScreen(
     // 这一条线路这一次「尝试」是从哪一刻起算的：首帧之前要等满设置的那一档时长
     //（用户 10-25 指令 4/5 ＋ 点档「可重试那一类等满」）。换台、换线、原地重连都会重新起表。
     val windowStartedAt = remember(channel.id, streamIndex, retryNonce) { SystemClock.elapsedRealtime() }
-    // 本台里已经真出过画面的线路号。换线只允许发生在没出过画面的线路上（见 LineRecovery）。
+    // 本台里播放器**自报已经在播**的线路号（STATE_READY 与 onIsPlayingChanged(true) 两处记账）。
+    // ⚠️它不等于「画出过画面」：10-26 真机现读有 6+7 格 `playing=true` 却整段没有一行 `firstFrame`
+    // ——那种线路在这一份里是「播过」的，于是既换不了线也换不了台，屏幕上就挂死（点档 #123 乙）。
+    // 真正「画出过画面」的那一份是下面 `framedLines`，换线保护改用它。
     val playedLines = remember(channel.id) { mutableSetOf<Int>() }
+    // 本台里**真画出过第一帧**的线路号（只在 `onRenderedFirstFrame` 记账）。
+    // 「已正常播放的线路绝不自动换线/换台」（用户 2026-10-21 指令）这条保护现在以它为准：
+    // 见过画面的线继续只原地重连，没见过画面的线到点就接管——包括播放器自报在播、画面却始终空着那一档。
+    val framedLines = remember(channel.id) { mutableSetOf<Int>() }
+    // 本台里**顺畅播满 `LineRecovery.STEADY_MS`** 的线路号（10-28 新增）。
+    // 「已播过的线路绝不自动换线」这条保护从此以它为准：见过一帧不算播过——
+    // 现读 36.110.54.118 那条线每段都能吐一帧、缓冲却只有 400–900 ms，
+    // 按旧的「见过一帧」口径会被判成「卡住了就原地重连」，于是这条线永远换不走。
+    val steadyLines = remember(channel.id) { mutableSetOf<Int>() }
+    // 这一趟已经失败过的线路号：末位线倒下时用它决定「回本台其它线」还是「换台」（10-28）。
+    val triedLines = remember(channel.id) { mutableSetOf<Int>() }
     var errorMessage by remember(channel.id) { mutableStateOf<String?>(null) }
     var statusText by remember(channel.id) { mutableStateOf(connectingText(channel.name, streamIndex)) }
     var videoSize by remember(channel.id, streamIndex) { mutableStateOf<VideoSize?>(null) }
@@ -171,9 +187,23 @@ fun PlayerScreen(
     val unplayableChannels = remember { mutableSetOf<String>() }
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
-    // 画面冻住这条尺：像素连续 FreezeWatch.SILENCE_MS 不变，就当作这台在喂同一帧。
+    // 卡顿这条尺（用户 10-26「优化稳定性减少卡顿」）：这一条线真出过画面之后，播放被中断
+    // （isPlaying 由 true 掉回 false、且这一刻没有报错）算一次卡顿，恢复时记下它压了多久。
+    // 只记账不动作——要不要因此换线/重连仍由 FreezeWatch 与 LineRecovery 那两套规则决定。
+    var renderedHere by remember(channel.id, streamIndex) { mutableStateOf(false) }
+    var stallStartedAt by remember(channel.id, streamIndex) { mutableLongStateOf(0L) }
+    val stallCount = remember(channel.id, streamIndex) { intArrayOf(0) }
+    val stallMillis = remember(channel.id, streamIndex) { longArrayOf(0L) }
+    // 画面冻住这条尺：连续 FreezeWatch.SILENCE_MS 没有任何新东西，就当作这台没在给新画面。
     // 动作只有「原地重连」一种，绝不换线、绝不换台（用户 09-29 立的规则：已经出过画面的线路只原地重连）。
     val freezeState = remember(channel.id, streamIndex) { FreezeWatch.State() }
+    // #152 甲（用户 10-27 点档）：判据主要换成**解码帧计数**。PixelCopy 在这台电视上 429 次全是
+    // sample blank，像素那条尺量不到任何东西；`VideoFrameMetadataListener` 每渲染一帧回调一次，
+    // 帧号满 30 秒不动＝解码/渲染侧真的没在出帧。只在这条线**真出过第一帧**之后才启用（renderedHere）：
+    // 纯音频线（MP2 那几条）一个视频帧都不会有，否则每 30 秒就被误判成冻住、白白重连。
+    val frameFreezeState = remember(channel.id, streamIndex) { FreezeWatch.State() }
+    val frameSeq = remember { java.util.concurrent.atomic.AtomicLong(0) }
+    val framePtsUs = remember { java.util.concurrent.atomic.AtomicLong(-1L) }
     val playerViewRef = remember { mutableStateOf<PlayerView?>(null) }
     LaunchedEffect(channel.id, streamIndex, retryNonce, isPlaying) {
         if (!isPlaying) return@LaunchedEffect
@@ -181,20 +211,44 @@ fun PlayerScreen(
         var logged = false
         while (true) {
             delay(FreezeWatch.SAMPLE_MS)
-            val surface = (playerViewRef.value?.videoSurfaceView as? SurfaceView) ?: continue
-            val hash = sampleSurfaceHash(surface, buf) ?: continue
-            if (!logged) {
+            val now = SystemClock.elapsedRealtime()
+            val seq = frameSeq.get()
+            var frozen = renderedHere && FreezeWatch.observe(frameFreezeState, seq, now)
+            // 像素那条尺留着：这台电视上它量不到东西，但换一台设备它就是唯一能抓住「解码在出帧、
+            // 画面却一帧不变」的读数——帧计数抓不到内容级冻帧（同一帧被反复编码送出去时帧号照样涨）。
+            val surface = playerViewRef.value?.videoSurfaceView as? SurfaceView
+            val hash = if (surface != null) sampleSurfaceHash(surface, buf) else null
+            if (hash != null) frozen = FreezeWatch.observe(freezeState, hash, now) || frozen
+            if (!logged && (renderedHere || hash != null)) {
                 logged = true
-                android.util.Log.i("FreezeWatch", "sampling channel=${channel.id} line=${streamIndex + 1} hash=$hash")
+                android.util.Log.i(
+                    "FreezeWatch",
+                    "sampling channel=${channel.id} line=${streamIndex + 1} 帧累计=$seq hash=$hash",
+                )
             }
-            if (!FreezeWatch.observe(freezeState, hash, SystemClock.elapsedRealtime())) continue
+            if (!frozen) continue
             if (reconnectsOnLine >= SAME_LINE_RECONNECTS) continue
             reconnectsOnLine += 1
-            android.util.Log.i("FreezeWatch", "frozen ${FreezeWatch.SILENCE_MS}ms → 原地重连 channel=${channel.id} line=${streamIndex + 1}")
+            android.util.Log.i(
+                "FreezeWatch",
+                "frozen ${FreezeWatch.SILENCE_MS}ms → 原地重连 channel=${channel.id}" +
+                    " line=${streamIndex + 1} 帧累计=$seq hash=$hash",
+            )
             statusText = "线路 ${streamIndex + 1} 画面停了，正在原地重连（第 $reconnectsOnLine 次）…"
             errorMessage = null
             isBuffering = true
             retryNonce += 1
+        }
+    }
+    // 每 10 秒打一行累计读数：真机上按台停一分钟，日志就能算出「这台在这条线上卡了几次、共多久」。
+    LaunchedEffect(channel.id, streamIndex) {
+        while (true) {
+            delay(10_000L)
+            android.util.Log.i(
+                "StallWatch",
+                "watch channel=${channel.id} line=${streamIndex + 1} playing=$isPlaying" +
+                    " 卡顿${stallCount[0]}次/${stallMillis[0]}ms t=${SystemClock.elapsedRealtime()}",
+            )
         }
     }
     var controlsVisible by remember { mutableStateOf(true) }
@@ -206,6 +260,8 @@ fun PlayerScreen(
     // 遥控器数字键选台：数字先进缓冲区，停手 2.5 秒后当成台号跳过去。
     var digitEntry by remember { mutableStateOf("") }
     var probeNonce by remember { mutableIntStateOf(0) }
+    // 面板上那颗「重新检测」按下去才重算；单纯打开面板不算（用户 10-26「算一次就好」）。
+    var reprobeRequested by remember { mutableStateOf(false) }
     var probingLines by remember { mutableStateOf(false) }
     val lineProbes = remember { mutableStateMapOf<Int, StreamProbe.Result>() }
 
@@ -221,6 +277,13 @@ fun PlayerScreen(
     val rootFocus = remember { FocusRequester() }
     val barFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
+    // 底栏 5 颗按钮各自的焦点入口。遥控器左右键以前交给 Compose 自己找下一个焦点：
+    // 从最左边那颗往右按会落到铺满全屏的根布局（实测 uiautomator 里 focused 节点变成
+    // [0,0][1920,1080]），之后左右键既不动焦点也不换线，用户看到的就是「按了没反应」。
+    // 改成自己按下标走、两头回环，不再让焦点跑到根布局上。
+    val barButtons = remember { listOf(barFocus, FocusRequester(), FocusRequester(), FocusRequester(), FocusRequester()) }
+    var barIndex by remember { mutableStateOf(0) }
+    var barHasFocus by remember { mutableStateOf(false) }
     val aspectModes = remember {
         listOf(
             AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -251,9 +314,9 @@ fun PlayerScreen(
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
+                // 10-28 试过 min30/max90/起播3/恢复4：东方卫视线 3 上 120 秒仍 5 次停顿、86% 时间在 BUFFERING，
+                // ahead 从没攒到 30 秒 ⇒ **缓冲深度不是钥匙**（那台服务端吞吐 < 码率），已改回。
                 /* minBufferMs = */ 20_000,
-                // 上限放到 60 秒（用户 10-24 18:3x「缓冲中/正在连接」）：断流那一下要靠已缓冲的
-                // 内容撑过去，40 秒在 1080p 上只剩 40 秒余量、抖两下就见底；60 秒约 45 MB，电视盒扛得住。
                 /* maxBufferMs = */ 60_000,
                 /* bufferForPlaybackMs = */ 1_200,
                 /* bufferForPlaybackAfterRebufferMs = */ 2_500,
@@ -277,6 +340,7 @@ fun PlayerScreen(
     }
     val exoPlayer = remember {
         ExoPlayer.Builder(context)
+            .setRenderersFactory(com.parentstv.live.media.ParentsRenderersFactory(context))
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
@@ -288,6 +352,39 @@ fun PlayerScreen(
     }
     DisposableEffect(exoPlayer) {
         onDispose { exoPlayer.release() }
+    }
+    // 10-28 用户现读「只有声音、没有视频、没有倒计时」：带宽不够时音频轨（~0.8 Mbps）先到、
+    // 视频轨（~7 Mbps）到不了，屏幕上就是「有声黑屏」，老人以为坏了。第一帧上屏之前一律不出声，
+    // 配合下面那条「没画面就显示倒计时」，父母看到的是「正在连接 · 还有 N 秒」而不是录音机。
+    LaunchedEffect(renderedHere, isPlaying) {
+        // 纯音频流（没有视频轨）不能永远静音：轨道表里只要「有音频、没视频」就放开，
+        // 而轨道表还没填起来时（起播头一两秒）保持静音——那一小段正是「有声黑屏」的来源。
+        val groups = exoPlayer.currentTracks.groups
+        val hasAudio = groups.any { it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO }
+        val hasVideo = groups.any { it.type == androidx.media3.common.C.TRACK_TYPE_VIDEO }
+        exoPlayer.volume = PlayerUi.volumeFor(renderedHere, hasAudio, hasVideo)
+    }
+    // MP2「有声但断」定位（用户 10-28「解决 MP2 有声但断」）：把两件事分开——
+    // **加载器没数据**（ahead 接近 0、isLoading=true）vs **数据在缓冲里但渲染器不吃**
+    // （ahead 有十几秒、isLoading=false，却 playing=false）。只打日志、不改行为。
+    LaunchedEffect(channel.id, streamIndex) {
+        var lastKey = ""
+        while (true) {
+            delay(2_000L)
+            val state = exoPlayer.playbackState
+            val ahead = exoPlayer.bufferedPosition - exoPlayer.currentPosition
+            val key = "$state/$isPlaying/${ahead / 5_000}"
+            if (key != lastKey || !isPlaying) {
+                lastKey = key
+                android.util.Log.i(
+                    "LoadWatch",
+                    "channel=${channel.id} line=${streamIndex + 1} state=$state playing=$isPlaying" +
+                        " loading=${exoPlayer.isLoading} aheadMs=$ahead" +
+                        " pos=${exoPlayer.currentPosition} buffered=${exoPlayer.bufferedPosition}" +
+                        " t=${SystemClock.elapsedRealtime()}",
+                )
+            }
+        }
     }
 
     fun jumpTo(next: Int) {
@@ -302,6 +399,31 @@ fun PlayerScreen(
         linePickerVisible = false
         channelPickerVisible = false
         onChannelChanged(queue[target])
+    }
+
+    // 帧计数这条尺的接线（#152 甲）：`VideoFrameMetadataListener` 每渲染一帧回调一次，
+    // 上面那段冻帧判据拿这个计数当读数。这里另外每 10 秒打一行累计：
+    // 「帧累计在涨、画面照旧」＝内容级冻帧（帧计数抓不到，得靠像素那条尺或人工看）；
+    // 「帧累计不动」＝解码/渲染侧真停了，30 秒后 FreezeWatch 会原地重连一次。
+    LaunchedEffect(exoPlayer) {
+        exoPlayer.setVideoFrameMetadataListener { presentationTimeUs, _, _, _ ->
+            framePtsUs.set(presentationTimeUs)
+            frameSeq.incrementAndGet()
+        }
+    }
+    LaunchedEffect(channel.id, streamIndex, retryNonce) {
+        var lastSeq = -1L
+        while (true) {
+            delay(10_000L)
+            val seq = frameSeq.get()
+            android.util.Log.i(
+                "FrameWatch",
+                "channel=${channel.id} line=${streamIndex + 1} 帧累计=$seq" +
+                    " 本段新增=${if (lastSeq < 0) "-" else (seq - lastSeq).toString()}" +
+                    " ptsUs=${framePtsUs.get()} playing=$isPlaying t=${SystemClock.elapsedRealtime()}",
+            )
+            lastSeq = seq
+        }
     }
 
     fun zap(delta: Int) = jumpTo(index + delta)
@@ -343,9 +465,20 @@ fun PlayerScreen(
 
     fun chooseLine(lineIndex: Int, keepControlsHidden: Boolean = false) {
         val url = channel.streams.getOrNull(lineIndex) ?: return
+        // 真机回测要把"遥控器排队"与"这条线起播"分成两个数：应用接受这次选线的时刻
+        // 只有这里知道（`QualityWatch` 与 `firstFrame` 都在出帧那一瞬才打，两者只差几毫秒，
+        // 拿它们当起点会把 150 秒的按键排队算进"起播耗时"）。
+        android.util.Log.i(
+            "LineProbe",
+            "select channel=${channel.id} line=${lineIndex + 1} from=${streamIndex + 1}" +
+                " t=${SystemClock.elapsedRealtime()}",
+        )
         prefs.setLine(channel.id, url)
         linePickerVisible = false
         reconnectsOnLine = 0
+        // 用户手动点的这条线：把「这一趟试过哪些线」清掉，否则 10-28 新加的末位兜圈
+        // 会把它当成已试过而跳过，等于用户点了却回不去。
+        triedLines.clear()
         if (streamIndex == lineIndex) {
             retryNonce += 1
         } else {
@@ -410,18 +543,40 @@ fun PlayerScreen(
 
     LaunchedEffect(linePickerVisible, channel.id, probeNonce) {
         if (!linePickerVisible) return@LaunchedEffect
+        // 用户 10-26 指令「线路清晰度计算一次就好，不需要每次打开线路时都重算」：
+        // 算过的线直接把开机缓存里的读数亮出来，只有没算过的（或按了「重新检测」）才去探。
+        // 少探一路就少一路和正在播的那条线抢首片带宽——那正是屏幕上「缓冲中」的一个来源。
+        val force = reprobeRequested
+        reprobeRequested = false
         lineProbes.clear()
+        channel.streams.forEachIndexed { lineIndex, url ->
+            StreamProbe.cached(url)?.let { lineProbes[lineIndex] = it }
+        }
+        val todo = StreamProbe.linesToProbe(channel.streams, force)
+        // 这一行是给「算一次就好」留证据用的：同一个台第二次打开面板应当 `要探0条`。
+        // 不写日志就只能靠肉眼看面板上那句「正在检测 x/y」，验收时说不清是哪一次打开。
+        android.util.Log.i(
+            "LineProbe",
+            "panel channel=${channel.id} 共${channel.streams.size}条 要探${todo.size}条" +
+                " 缓存命中${channel.streams.size - todo.size}条 force=$force" +
+                " t=${SystemClock.elapsedRealtime()}",
+        )
+        if (todo.isEmpty()) {
+            probingLines = false
+            return@LaunchedEffect
+        }
         probingLines = true
         try {
             coroutineScope {
                 // 并发上限 2：一个台几条线就并发几路，每路最长十几秒，全撒出去就是
                 // 自己把正在播的那条首片的带宽抢干——屏幕上就是「缓冲中」。
                 val probeGate = Semaphore(PROBE_CONCURRENCY)
-                channel.streams.forEachIndexed { lineIndex, url ->
+                todo.forEach { (lineIndex, url) ->
                     launch(Dispatchers.IO) {
                         probeGate.withPermit {
                             val result = StreamProbe.probe(url)
                             withContext(Dispatchers.Main) {
+                                StreamProbe.rememberResult(url, result)
                                 lineProbes[lineIndex] = result
                             }
                         }
@@ -432,6 +587,14 @@ fun PlayerScreen(
             // 关掉面板会取消这个协程，原来这一句在协程体末尾、走不到，
             // 「检测中…」就永远挂着、「重新检测」按钮一直是灰的。
             probingLines = false
+            // 「回来几条」少于「排了几条」＝这一批是被关面板掐掉的，那几条没进缓存，
+            // 下一次打开还会再探一遍。验收「算一次就好」时这一行决定第二次的「要探N条」该怎么读。
+            val cachedBack = todo.count { StreamProbe.cached(it.second) != null }
+            android.util.Log.i(
+                "LineProbe",
+                "panelDone channel=${channel.id} 排${todo.size}条 回来${cachedBack}条" +
+                    " t=${SystemClock.elapsedRealtime()}",
+            )
         }
     }
 
@@ -441,22 +604,40 @@ fun PlayerScreen(
         val now = System.currentTimeMillis()
         if (now - lastRecoveryAt < RECOVERY_DEBOUNCE_MS) return
         lastRecoveryAt = now
-        // 已经出过画面的线路只在原地重连，绝不自动换线、绝不自动换台（用户 2026-10-21 指令）；
-        // 没出过画面的线路按设置里的等待时间到点就换下一条（用户 2026-10-22 要求默认 10 秒），
+        // 已经画出过画面的线路只在原地重连，绝不自动换线、绝不自动换台（用户 2026-10-21 指令）；
+        // 没画出过画面的线路按设置里的等待时间到点就换下一条（用户 2026-10-22 要求默认 10 秒），
         // 所以这一臂传的重连次数是 0——不然「10 秒换线」实际要等 30 秒。
-        val played = streamIndex in playedLines
-        when (
-            LineRecovery.action(
-                lineHasPlayed = played,
-                reconnectsOnLine = reconnectsOnLine,
-                sameLineReconnects = if (played) SAME_LINE_RECONNECTS else 0,
-                lineIndex = streamIndex,
-                lastLineIndex = channel.streams.lastIndex,
-            )
-        ) {
+        // 10-26 点档 #123 乙：这里的依据从 `playedLines`（自报在播就算）换成 `framedLines`
+        // （真画出第一帧才算）。差的正是「READY／isPlaying=true 却一帧都没有」那一族——
+        // 旧口径下它们被记成「播过」，于是这张真值表第一臂永远短路成原地重连，换不了也走不了。
+        // 10-28：这一臂的「播过」从「见过一帧」（framedLines）收紧成「顺畅播满 STEADY_MS」
+        // （steadyLines）。现读 36.110.54.118 那条线：每段都能吐一帧、缓冲长期只有 400–900 ms，
+        // 按旧口径会被判成 ReconnectSameLine 原地重连到永远，屏幕上就是「一直缓冲、一直卡」。
+        val hasPicture = streamIndex in steadyLines
+        val action = LineRecovery.action(
+            lineHasPlayed = hasPicture,
+            reconnectsOnLine = reconnectsOnLine,
+            sameLineReconnects = if (hasPicture) SAME_LINE_RECONNECTS else 0,
+            lineIndex = streamIndex,
+            lastLineIndex = channel.streams.lastIndex,
+        )
+        // 10-26 真机现读：有 3 格在"这条线已经出过第一帧"之后 2–10 秒被应用自己换到了下一条
+        // （台账里没有 `LineProbe: select` 行＝不是选线面板按下去的），而下面这条判据的
+        // 480 格夹具证明 `lineHasPlayed=true` 永远不会走 NextLine ⇒ 只可能是这一刻 `played=false`。
+        // 这一行是把"这一刻到底看到了什么"打出来：改了判据没用的话，先从这里回答。
+        // 两个集合都打出来，就是为了分清「没记账」与「记了但没画」：
+        // playedLines 里有、framedLines 里没有＝播放器自报在播却没出画（#123 那一族）。
+        android.util.Log.i(
+            "LineRecovery",
+            "channel=${channel.id} line=${streamIndex + 1} hasPicture=$hasPicture" +
+                " 顺畅播满=$steadyLines 已出画=$framedLines 自报在播=$playedLines" +
+                " 重连=$reconnectsOnLine 选择=$action 消息=${message ?: "-"}" +
+                " t=${SystemClock.elapsedRealtime()}",
+        )
+        when (action) {
             LineRecovery.Action.ReconnectSameLine -> {
                 reconnectsOnLine += 1
-                statusText = if (played) {
+                statusText = if (hasPicture) {
                     "线路 ${streamIndex + 1} 卡住了，正在原地重连（第 $reconnectsOnLine 次）…"
                 } else {
                     "线路 ${streamIndex + 1} 卡住了，正在重连（第 $reconnectsOnLine 次）…"
@@ -467,14 +648,22 @@ fun PlayerScreen(
             }
 
             LineRecovery.Action.NextLine -> {
+                triedLines.add(streamIndex)
                 reconnectsOnLine = 0
                 statusText = "线路 ${streamIndex + 1} 不可用，正在切换备用线路…"
                 streamIndex += 1
             }
 
             LineRecovery.Action.NextChannel -> {
-                reconnectsOnLine = 0
-                if (!zapToNextChannel(message ?: "线路全部不可用")) {
+                triedLines.add(streamIndex)
+                // 末位线不通时先回本台还没试过的线（10-28：东方卫视 线4 卡死会一路换台，
+                // 而它的线1 一直是好的）。全部试过才认「这台没戏」。
+                val wrap = LineRecovery.nextUntriedLine(streamIndex, channel.streams.size, triedLines)
+                if (wrap != null) {
+                    reconnectsOnLine = 0
+                    statusText = "线路 ${streamIndex + 1} 不可用，正在切回线路 ${wrap + 1}…"
+                    streamIndex = wrap
+                } else if (!zapToNextChannel(message ?: "线路全部不可用")) {
                     statusText = ""
                     isBuffering = false
                     controlsVisible = true
@@ -483,33 +672,79 @@ fun PlayerScreen(
         }
     }
 
+    // 「这条线拿到的是直播还是一枚定长片子」——只打读数、不改行为（判据在 `LineRecovery.liveStream`）。
+    // 起播后 4 秒读一次：那时首帧多半已经落定、清单也解析完了，`duration` 才不是"还没拿到"。
+    // 为什么不顺手把它接进换线判据：那一改就会让"放出画面"的线被跳过，与 2026-10-21
+    // 「已正常播放过的线路只在原地重连」那条指令挨着，要单独点档。
     LaunchedEffect(channel.id, streamIndex, retryNonce) {
-        var stalledMs = 0L
+        delay(4_000L)
+        val durationMs = exoPlayer.duration
+        android.util.Log.i(
+            "LiveWatch",
+            "channel=${channel.id} line=${streamIndex + 1}" +
+                " live=${LineRecovery.liveStream(exoPlayer.isCurrentMediaItemLive, durationMs)}" +
+                " duration=$durationMs" +
+                " t=${SystemClock.elapsedRealtime()}",
+        )
+        // 「有画没声」那一族的读数（2026-10-27 用户现听指认）。只打、不改行为：
+        // 音频轨有没有、是什么编码、播放器给的音量多少、在不在播——四样分开念，
+        // 才能分清是「源没带音轨」「盒子解不了这个编码」还是「音量/焦点被谁压住了」。
+        fun audioRead(): Triple<String, String?, Int> {
+            val groups = exoPlayer.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+            val group = groups.firstOrNull { it.isSelected } ?: groups.firstOrNull()
+            // `TrackGroup` 这一版没有 `trackFormat` 属性，只能按索引取（15:04 JVM 就是这么报的
+            // Unresolved reference 'trackFormat'）；组里至少一条，取第 0 条不必判越界。
+            return Triple(LineRecovery.audioClass(group?.getTrackFormat(0)?.sampleMimeType, groups.size,
+                exoPlayer.isPlaying), group?.getTrackFormat(0)?.sampleMimeType, groups.size)
+        }
+        fun logAudio(atMs: Long, read: Triple<String, String?, Int>) = android.util.Log.i(
+            "AudioWatch",
+            "channel=${channel.id} line=${streamIndex + 1}" +
+                " audio=${read.first}" +
+                " mime=${read.second} tracks=${read.third}" +
+                " volume=${exoPlayer.volume} playing=${exoPlayer.isPlaying}" +
+                " t=$atMs",
+        )
+        // 4 秒这一拍常常还没填 tracks ⇒ 旧口径会把它打成「无音轨」（真机 10-27 那 3 行就是说谎的样本）。
+        // 现在读到「未证」就补两拍（10 秒、20 秒）；填上了就只打一行，不刷日志。
+        val firstAudio = audioRead()
+        logAudio(4_000L, firstAudio)
+        if (firstAudio.first == "未证") {
+            delay(6_000L)
+            val secondAudio = audioRead()
+            logAudio(10_000L, secondAudio)
+            if (secondAudio.first == "未证") {
+                delay(10_000L)
+                logAudio(20_000L, audioRead())
+            }
+        }
+    }
+
+    LaunchedEffect(channel.id, streamIndex, retryNonce) {
         var playingMs = 0L
+        // 判定全在 `LineRecovery.SteadyTracker` 里（纯类，单测直接拿真机读数回放）。
+        val tracker = LineRecovery.SteadyTracker(prefs.lineSwitchSeconds * 1_000L)
         while (true) {
             delay(1_000)
             val waiting = exoPlayer.playWhenReady && !exoPlayer.isPlaying
-            if (waiting) {
-                stalledMs += 1_000
-                playingMs = 0
-            } else {
-                stalledMs = 0
-                if (exoPlayer.isPlaying) playingMs += 1_000
-            }
+            val ahead = exoPlayer.bufferedPosition - exoPlayer.currentPosition
+            if (waiting) playingMs = 0 else if (exoPlayer.isPlaying) playingMs += 1_000
             if (playingMs >= RECONNECT_AFTER_STABLE_MS) reconnectsOnLine = 0
             // 等多久算这条线失败：一律按设置里配的「线路时长」这一档算（默认 10 秒，
             // 档位见 LINE_SECONDS_OPTIONS），起播阶段和已经出过画面之后卡住都用同一档。
             // 这里以前对「本台一条线都还没出过画面」的首条线另压了一档 4 秒（上一轮为了躲
             // 「正在连接十几秒」加的），于是屏幕上等的时长跟设置里配的数对不上——
             // 用户 10-25 指令第 4 条要的就是「按设置里配的时长来等画面」，短档连同那常量一起删掉。
-            val limit = prefs.lineSwitchSeconds * 1_000L
-            // 首帧之前按「这一次尝试起算的整档时长」到点（用户 10-25 指令 5：要按设置里配的数等满）；
-            // 已经出过画面之后才卡住的，仍按连续卡顿时长算，否则播到第 10 秒就会误判成失败。
-            val overWindow = if (streamIndex in playedLines) {
-                stalledMs >= limit
-            } else {
-                waiting && SystemClock.elapsedRealtime() - windowStartedAt >= limit
-            }
+            // 顺畅累计到 STEADY_MS 才承认这条线「真播过」，之后才受「绝不自动换线」保护；
+            // 没顺畅过的线整档到点就接管（10-28：36.110 那条每段吐一帧、缓冲只有 400–892 ms）。
+            val overWindow = tracker.sample(
+                playing = exoPlayer.isPlaying,
+                waiting = waiting,
+                aheadMs = ahead,
+                rendered = renderedHere,
+                attemptMs = SystemClock.elapsedRealtime() - windowStartedAt,
+            )
+            if (tracker.steady) steadyLines.add(streamIndex)
             if (overWindow) {
                 tryNextLine("线路长时间无响应，请检查网络后重试")
                 break
@@ -526,7 +761,11 @@ fun PlayerScreen(
     //（用户 10-25 指令 3「线路或频道切换时，将 loading 改为设置的时长的倒计时」）。
     // 触发条件与原来那个居中圈完全一样，起点就是上面 watchdog 用的同一把尺（lineSeconds），
     // 数到 1 大概就是该换下一条线的时候——圈不再显示，屏幕上只剩这一句大白话。
-    val waitingForPicture = errorMessage == null && isBuffering && !isPlaying
+    // 10-28 用户现读「只有声音、没有视频、也没有倒计时」：音频轨只有 ~0.2 Mbps，带宽不够时音频照走、
+    // 视频一帧都没有，而旧判据 `isBuffering && !isPlaying` 这一刻是假的（音频在播）⇒ 倒计时压根不显示，
+    // 屏幕上只剩下声音，父母不知道还在等画面。现在多一臂：**这条线还没画出过第一帧**也算等待中。
+    val waitingForPicture =
+        errorMessage == null && PlayerUi.waitingForPicture(renderedHere, isBuffering, isPlaying)
     var countdownSeconds by remember(channel.id, streamIndex) { mutableIntStateOf(lineSeconds) }
     LaunchedEffect(waitingForPicture, channel.id, streamIndex, retryNonce, lineSeconds) {
         if (!waitingForPicture) {
@@ -602,6 +841,10 @@ fun PlayerScreen(
                 statusText = ""
                 shownName = channel.name
                 shownMeta = captionMeta(channelNumber, categoryNameOf(channel.category), channel.subgroup)
+                renderedHere = true
+                // 这才是「这条线在本台真画出过画面」的唯一记账点。上面 `playedLines` 那两处
+                // （READY／自报在播）都不算——见 :166 那段。
+                framedLines.add(lineBeingPlayed)
             }
 
             override fun onVideoSizeChanged(size: VideoSize) {
@@ -618,12 +861,32 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 if (playing) {
+                    val started = stallStartedAt
+                    if (started != 0L) {
+                        val dur = SystemClock.elapsedRealtime() - started
+                        stallStartedAt = 0L
+                        stallCount[0] += 1
+                        stallMillis[0] += dur
+                        android.util.Log.i(
+                            "StallWatch",
+                            "recover channel=${channel.id} line=${lineBeingPlayed + 1} stall=${dur}ms" +
+                                " 卡顿${stallCount[0]}次/${stallMillis[0]}ms t=${SystemClock.elapsedRealtime()}",
+                        )
+                    }
                     isBuffering = false
                     statusText = ""
                     shownName = channel.name   // 万一某些解码器不回调首帧，这一臂兜底
                     shownMeta = captionMeta(channelNumber, categoryNameOf(channel.category), channel.subgroup)
                     playedLines.add(lineBeingPlayed)
-                    prefs.setLine(channel.id, url)
+                    // 只有顺畅播满那一段之后才「记住这条线」。10-28：一条只会吐半秒缓冲的线
+                    // 也会把 isPlaying 翻成 true，照旧记账等于下次开机直接落到卡的那条上。
+                    if (lineBeingPlayed in steadyLines) prefs.setLine(channel.id, url)
+                } else if (renderedHere && errorMessage == null && stallStartedAt == 0L) {
+                    stallStartedAt = SystemClock.elapsedRealtime()
+                    android.util.Log.i(
+                        "StallWatch",
+                        "stall channel=${channel.id} line=${lineBeingPlayed + 1} t=$stallStartedAt",
+                    )
                 }
             }
 
@@ -697,6 +960,9 @@ fun PlayerScreen(
         linePickerVisible,
         channelPickerVisible,
         guideVisible,
+        // 在底栏上左右移动也算「用户还在操作」，3 秒倒计时要重新开始；
+        // 否则焦点刚挪到一半控制栏就缩回去了，看起来又像「按了没反应」。
+        barIndex,
     ) {
         val blocked = linePickerVisible || channelPickerVisible || guideVisible ||
             errorMessage != null || !isPlaying
@@ -707,12 +973,7 @@ fun PlayerScreen(
     }
 
     // 数字键停手 2.5 秒后把这串数字当**全频道台号**用：第 N 台，不管它落在哪一组。
-    LaunchedEffect(digitEntry) {
-        val typed = digitEntry
-        if (typed.isEmpty()) return@LaunchedEffect
-        delay(DIGIT_ENTRY_TIMEOUT_MS)
-        digitEntry = ""
-        val number = typed.toIntOrNull() ?: return@LaunchedEffect
+    fun jumpToNumber(number: Int) {
         val target = numberedChannels.getOrNull(number - 1)
         if (target == null) {
             statusText = "全频道共 ${numberedChannels.size} 个台，没有第 $number 台"
@@ -729,6 +990,14 @@ fun PlayerScreen(
         }
     }
 
+    LaunchedEffect(digitEntry) {
+        val typed = digitEntry
+        if (typed.isEmpty()) return@LaunchedEffect
+        delay(DIGIT_ENTRY_TIMEOUT_MS)
+        digitEntry = ""
+        typed.toIntOrNull()?.let { jumpToNumber(it) }
+    }
+
     LaunchedEffect(zapNotice) {
         if (zapNotice) {
             delay(2_500)
@@ -741,7 +1010,15 @@ fun PlayerScreen(
         delay(80)
         when {
             errorMessage != null -> runCatching { retryFocus.requestFocus() }
-            controlsVisible -> runCatching { barFocus.requestFocus() }
+            controlsVisible -> {
+                // 选台/选线面板关闭时，焦点会被恢复到面板打开前的位置（常常是根布局）。
+                // 一次 requestFocus 可能正好撞在这次恢复上，所以重试到「底栏真的拿到焦点」为止。
+                repeat(10) {
+                    runCatching { barButtons[0].requestFocus() }
+                    delay(120)
+                    if (barHasFocus) return@LaunchedEffect
+                }
+            }
             else -> runCatching { rootFocus.requestFocus() }
         }
     }
@@ -775,11 +1052,49 @@ fun PlayerScreen(
             .background(Color.Black)
             .focusRequester(rootFocus)
             .focusable()
+            // 焦点落到这层铺满全屏的根布局时，说明底栏此刻「没有焦点」——把焦点请回底栏第一颗。
+            // 不回请的话，左右键在 onKeyEvent 里因为 controlsVisible=true 直接放行给焦点系统，
+            // 而根布局四周没有别的可聚焦节点，结果就是按什么都没反应。
+            .onFocusChanged { state ->
+                if (state.isFocused && controlsVisible && !barHasFocus &&
+                    !linePickerVisible && !channelPickerVisible && !guideVisible &&
+                    errorMessage == null
+                ) {
+                    runCatching { barButtons[0].requestFocus() }
+                }
+            }
             // 遥控器操作优先级最高（用户 10-23 19:1x「不受弹出影响」）：
             // 换台键走在预览阶段——控制栏弹出、错误提示弹着、焦点停在按钮上，都不挡上下换台；
             // 先把这些弹层收起来再换台。选台/选线/节目单是独立窗口，不受这一层影响。
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val barShown = controlsVisible && errorMessage == null &&
+                    !linePickerVisible && !channelPickerVisible && !guideVisible
+                if (barShown) {
+                    when (event.key) {
+                        Key.DirectionLeft, Key.DirectionRight -> {
+                            if (!barHasFocus) {
+                                runCatching { barButtons[0].requestFocus() }
+                            } else {
+                                val step = if (event.key == Key.DirectionRight) 1 else -1
+                                val next = ((barIndex + step) % barButtons.size + barButtons.size) % barButtons.size
+                                runCatching { barButtons[next].requestFocus() }
+                            }
+                            return@onPreviewKeyEvent true
+                        }
+
+                        Key.DirectionUp, Key.DirectionDown -> {
+                            // 底栏没焦点时第一下先把焦点请回底栏，而不是直接换台——
+                            // 否则用户按了键只见频道跳走、控制栏依旧没有焦点框。
+                            if (!barHasFocus) {
+                                runCatching { barButtons[0].requestFocus() }
+                                return@onPreviewKeyEvent true
+                            }
+                        }
+
+                        else -> {}
+                    }
+                }
                 when (event.key) {
                     Key.DirectionUp -> {
                         controlsVisible = false
@@ -837,6 +1152,11 @@ fun PlayerScreen(
                         if (!controlsVisible) {
                             controlsVisible = true
                             channelPickerVisible = true
+                            true
+                        } else if (!barHasFocus) {
+                            // 底栏在、但没有焦点时，OK 先负责把焦点送回底栏；否则这一下
+                            // 交给一个不可点击的根布局吃掉，用户看到的就是「OK 也没反应」。
+                            runCatching { barButtons[0].requestFocus() }
                             true
                         } else {
                             false
@@ -896,7 +1216,7 @@ fun PlayerScreen(
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setKeepContentOnPlayerReset(true)
-                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    setShutterBackgroundColor(0xFF070B14.toInt())
                     resizeMode = aspectModes[aspectIndex]
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -914,7 +1234,9 @@ fun PlayerScreen(
         )
 
         AnimatedVisibility(
-            visible = controlsVisible || zapNotice,
+            // 用户 10-25「缓冲中/正在连接 xxx 改在画面右上方」：那句提示跟着右上角这一列走，
+            // 等待画面期间即使控制栏已经自动收起也要露着。
+            visible = controlsVisible || zapNotice || waitingForPicture,
             modifier = Modifier.align(Alignment.TopCenter),
             enter = fadeIn(),
             exit = fadeOut(),
@@ -954,10 +1276,11 @@ fun PlayerScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                     // 播通时这一行不再写字样（用户 10-23：去掉画面上的「直播」文字），暂停提示照旧。
-                    // 还没出画面的等待期也只留「线路 k / N」这一条（用户 10-25 指令 3）：
-                    // 那句状态文字已经写在画面中间的倒计时上，同屏不能出现两句一样的提示。
+                    // 还没出画面的等待期：那句「正在连接 / 还有 N 秒」按用户 10-25 指令挪到
+                    // 右上角这一列（原来那块在画面正中），同屏只留这一句。
                     val playStatus = when {
-                        waitingForPicture -> ""
+                        waitingForPicture ->
+                            countdownLine(statusText, countdownSeconds.coerceAtLeast(1))
                         statusText.isNotBlank() -> statusText
                         isPlaying -> ""
                         else -> "已暂停"
@@ -967,7 +1290,12 @@ fun PlayerScreen(
                         Text(
                             text = playStatus,
                             color = if (statusText.isNotBlank()) TvColors.Accent else Color(0xFFCBD5E1),
-                            fontSize = 13.sp,
+                            fontSize = if (waitingForPicture) 17.sp else 13.sp,
+                            fontWeight = if (waitingForPicture) FontWeight.SemiBold else FontWeight.Normal,
+                            textAlign = TextAlign.End,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 520.dp),
                         )
                     }
                     // 分辨率行照旧归设置里的「显示清晰度」管，只是等待期间不出现（同上，10-25 指令 3），
@@ -989,25 +1317,8 @@ fun PlayerScreen(
             }
         }
 
-        // 换线/换台还没出画面这一段：画面中间只留这一句按设置时长递减的倒计时，
-        // 原来那个「转圈 + 缓冲中」整块不再出现（用户 10-25 指令 3）。
-        if (waitingForPicture) {
-            Text(
-                text = countdownLine(statusText, countdownSeconds.coerceAtLeast(1)),
-                color = Color.White,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .width(760.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 28.dp, vertical = 16.dp),
-            )
-        }
+        // 用户 10-25「缓冲中/正在连接 xxx 改在画面右上方」：画面正中不再叠提示，
+        // 那句话已经在右上角「线路 k / N」下面那一行显示（见上面的 playStatus）。
 
         // 数字键选台：把正在输入的那几位数显示在右下角，停手 2.5 秒后按台号跳过去。
         if (digitEntry.isNotEmpty()) {
@@ -1042,19 +1353,23 @@ fun PlayerScreen(
                     .padding(horizontal = 40.dp, vertical = 26.dp),
             ) {
                 Row(
+                    modifier = Modifier.onFocusChanged { barHasFocus = it.hasFocus },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerActionButton(
                         icon = Icons.Rounded.List,
                         label = "选线",
-                        focusRequester = barFocus,
+                        focusRequester = barButtons[0],
+                        onFocusChanged = { if (it) barIndex = 0 },
                         onClick = { linePickerVisible = true },
                     )
                     PlayerActionButton(
                         icon = Icons.Rounded.LiveTv,
                         label = "选台",
                         enabled = queue.size > 1,
+                        focusRequester = barButtons[1],
+                        onFocusChanged = { if (it) barIndex = 1 },
                         onClick = { channelPickerVisible = true },
                     )
                     // 用户 10-25 指令 1：这一排去掉「上一个／下一个／铺满／收藏」四颗
@@ -1063,6 +1378,8 @@ fun PlayerScreen(
                     PlayerActionButton(
                         icon = Icons.Rounded.Timer,
                         label = "时长 ${lineSeconds}秒",
+                        focusRequester = barButtons[2],
+                        onFocusChanged = { if (it) barIndex = 2 },
                         onClick = {
                             lineSeconds = if (lineSeconds in LINE_SECONDS_OPTIONS) {
                                 LINE_SECONDS_OPTIONS[
@@ -1077,12 +1394,16 @@ fun PlayerScreen(
                     PlayerActionButton(
                         icon = Icons.Rounded.Schedule,
                         label = "节目单",
+                        focusRequester = barButtons[3],
+                        onFocusChanged = { if (it) barIndex = 3 },
                         onClick = { guideVisible = true },
                     )
                     Spacer(Modifier.weight(1f))
                     PlayerActionButton(
                         icon = Icons.Rounded.ArrowBack,
                         label = "返回",
+                        focusRequester = barButtons[4],
+                        onFocusChanged = { if (it) barIndex = 4 },
                         onClick = onBack,
                     )
                 }
@@ -1176,7 +1497,10 @@ fun PlayerScreen(
                 probing = probingLines,
                 playingSize = videoSize,
                 catalogQualityOf = lineQualityOf,
-                onRefresh = { probeNonce += 1 },
+                onRefresh = {
+                    reprobeRequested = true
+                    probeNonce += 1
+                },
                 onZap = ::zap,
                 onSelect = ::chooseLine,
                 onDismiss = { linePickerVisible = false },
@@ -1191,6 +1515,10 @@ fun PlayerScreen(
                 totalChannels = numberedChannels.size,
                 favorites = favorites,
                 onZap = ::zap,
+                onNumber = { number ->
+                    channelPickerVisible = false
+                    jumpToNumber(number)
+                },
                 onSelect = { position ->
                     channelPickerVisible = false
                     jumpTo(position)
@@ -1256,7 +1584,15 @@ private suspend fun sampleSurfaceHash(view: SurfaceView, buf: IntArray): Long? {
         val onDone: (Int) -> Unit = { result ->
             val hash = if (result == android.view.PixelCopy.SUCCESS) {
                 bmp.getPixels(buf, 0, rw, 0, 0, rw, rh)
-                FreezeWatch.hash(buf.copyOf(rw * rh))
+                val n = rw * rh
+                // 全 0 缓冲是这台电视没把视频层交给 PixelCopy（10-26 小米电视实测），
+                // 那是「看不见」不是「画面冻住」——不喂给这条尺，免得每 30 秒白重连一次。
+                if (FreezeWatch.isBlank(buf, n)) {
+                    android.util.Log.i("FreezeWatch", "sample blank → 这台电视没把视频层交给 PixelCopy，这一尺不判")
+                    null
+                } else {
+                    FreezeWatch.hash(buf.copyOf(n))
+                }
             } else {
                 null
             }
@@ -1295,7 +1631,10 @@ private fun countdownLine(status: String, secondsLeft: Int): String {
  * 换台那一下由 [PlayerScreen] 的 jumpTo 统一把弹层收掉。
  * 上下键不在这里抢：弹层里它们要用来走列表（那是用户明确要的焦点导航）。
  */
-private fun Modifier.zapWhileOpen(onZap: (Int) -> Unit): Modifier = onPreviewKeyEvent { event ->
+private fun Modifier.zapWhileOpen(
+    onZap: (Int) -> Unit,
+    onDigit: (Int) -> Unit = {},
+): Modifier = onPreviewKeyEvent { event ->
     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
     when (event.key) {
         Key.ChannelUp, Key.MediaPrevious -> {
@@ -1308,7 +1647,14 @@ private fun Modifier.zapWhileOpen(onZap: (Int) -> Unit): Modifier = onPreviewKey
             true
         }
 
-        else -> false
+        else -> {
+            // 面板上那句「遥控器按数字键直接输它」以前是空话——这里压根没接数字键。
+            val digit = DIGIT_KEYS[event.key]
+            if (digit == null) false else {
+                onDigit(digit)
+                true
+            }
+        }
     }
 }
 
@@ -1538,9 +1884,18 @@ private fun ChannelPickerDialog(
     totalChannels: Int,
     favorites: Set<String>,
     onZap: (Int) -> Unit,
+    onNumber: (Int) -> Unit,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var digitBuffer by remember { mutableStateOf("") }
+    LaunchedEffect(digitBuffer) {
+        if (digitBuffer.isEmpty()) return@LaunchedEffect
+        delay(DIGIT_ENTRY_TIMEOUT_MS)
+        val typed = digitBuffer
+        digitBuffer = ""
+        typed.toIntOrNull()?.let(onNumber)
+    }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = (selectedIndex - 2).coerceAtLeast(0),
     )
@@ -1559,7 +1914,7 @@ private fun ChannelPickerDialog(
             modifier = Modifier
                 .width(880.dp)
                 .heightIn(max = 620.dp)
-                .zapWhileOpen(onZap)
+                .zapWhileOpen(onZap) { digit -> digitBuffer = (digitBuffer + digit).takeLast(3) }
                 .clip(RoundedCornerShape(22.dp))
                 .background(TvColors.BackgroundAlt)
                 .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))

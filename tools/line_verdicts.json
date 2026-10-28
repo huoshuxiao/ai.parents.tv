@@ -1,0 +1,67 @@
+{
+ "http://jwplay.hebyun.com.cn/live/xtsrmtzs/1500k/tzwj_video.m3u8": {
+  "name": "邢台综合",
+  "logo": "台标相符（邢台综合）",
+  "picture": "正常节目画面（风景）"
+ },
+ "http://l.cztvcloud.com/channels/lantian/SXzhuji3/720p.m3u8?zzhed": {
+  "name": "诸暨新闻综合",
+  "logo": "台标相符（新闻综合）",
+  "picture": "正常节目画面（剧集《底线》）"
+ },
+ "http://l.cztvcloud.com/channels/lantian/SXwencheng1/720p.m3u8": {
+  "name": "文成综合",
+  "logo": "台标相符（文成综合）",
+  "picture": "正常节目画面"
+ },
+ "http://l.cztvcloud.com/channels/lantian/SXjinyun1/720p.m3u8": {
+  "name": "缙云综合",
+  "logo": "台标相符（缙云综合）",
+  "picture": "正常节目画面"
+ },
+ "https://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8": {
+  "name": "萧山生活频道",
+  "logo": "台标相符（萧山电视台）",
+  "picture": "广告：冬虫夏草 400-850-6980，带二维码"
+ },
+ "http://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8": {
+  "name": "萧山生活",
+  "logo": "台标相符（萧山电视台）",
+  "picture": "广告：冬虫夏草 400-850-6980，带二维码"
+ },
+ "http://l.cztvcloud.com/channels/lantian/SXyuhang3/720p.m3u8": {
+  "name": "余杭未来E",
+  "logo": "台标相符（YMG 未来频道）",
+  "picture": "正常节目画面（空镜）"
+ },
+ "http://live.jinchuanrmt.com:90/live/zhxw.m3u8?zsicd": {
+  "name": "金川新闻综合",
+  "logo": "台标相符（JCTV）",
+  "picture": "正常节目画面（电视剧）"
+ },
+ "http://175.155.106.72:89/live1/live1.m3u8": {
+  "name": "乐至综合",
+  "logo": "台标相符（综合）",
+  "picture": "正常节目画面（右下带二维码）"
+ },
+ "http://175.155.106.72:89/live1/live1.m3u8?zsicd": {
+  "name": "乐至综合频道",
+  "logo": "台标相符（综合）",
+  "picture": "正常节目画面（右下带二维码）"
+ },
+ "http://file.ysxtv.cn/cms/videos/nmip-media/channellive/channel4/playlist.m3u8?zs": {
+  "name": "营山电视台",
+  "logo": "台标相符（营山）",
+  "picture": "正常节目画面（图书馆节目）"
+ },
+ "http://61.216.67.119:1935/bltvhd/bltv1/chunklist_w1266569526.m3u": {
+  "name": "人间卫视",
+  "logo": "台标相符（BLTV 人间卫视）",
+  "picture": "正常节目画面（禅语文字卡）"
+ },
+ "https://5ddce30eb4b55.streamlock.net/bltvhd/bltv1/chunklist_w511254805.m3u8": {
+  "name": "人间卫视",
+  "logo": "台标相符（BLTV 人间卫视）",
+  "picture": "正常节目画面（禅语文字卡）"
+ }
+}

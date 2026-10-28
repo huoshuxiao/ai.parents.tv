@@ -1,0 +1,171 @@
+{
+ "generatedAt": "2026-10-25T20:35+08:00",
+ "source": "gitee.com/gly358617629/iptv IPTV.txt、github.com/homjanon/tv（iptv、hopo.txt）、github.com/jisoypub/iptv（ipv4*.m3u）",
+ "rule": "候选先 health_probe 取分片，再 VLC 原生抽帧，logo_check 对本台模板 ≥0.45；只收 .m3u8 且原生宽 ≤ 该台现有首条，追加在末尾，不动首条。",
+ "channels": {
+  "北京卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/14/index.m3u8",
+    "score": 0.571,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/005.jpg"
+   }
+  ],
+  "四川卫视": [
+   {
+    "url": "http://61.138.82.196:808/hls/35/index.m3u8",
+    "score": 0.662,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/007.jpg"
+   }
+  ],
+  "山东卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/33/index.m3u8",
+    "score": 0.729,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/009.jpg"
+   }
+  ],
+  "江苏卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/27/index.m3u8",
+    "score": 0.584,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/016.jpg"
+   }
+  ],
+  "浙江卫视": [
+   {
+    "url": "http://ali-xwl.cztv.com/live/channel011080Pnew.m3u8",
+    "score": 0.708,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/021.jpg"
+   },
+   {
+    "url": "http://36.110.54.118:866/hls/29/index.m3u8",
+    "score": 0.733,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/022.jpg"
+   }
+  ],
+  "湖北卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/30/index.m3u8",
+    "score": 0.618,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/026.jpg"
+   },
+   {
+    "url": "http://61.138.82.196:808/hls/18/index.m3u8",
+    "score": 0.632,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/027.jpg"
+   }
+  ],
+  "天津卫视": [
+   {
+    "url": "http://61.138.82.196:808/hls/33/index.m3u8",
+    "score": 0.535,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/037.jpg"
+   }
+  ],
+  "东方卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/28/index.m3u8",
+    "score": 0.458,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/038.jpg"
+   }
+  ],
+  "深圳卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/26/index.m3u8",
+    "score": 0.636,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/043.jpg"
+   }
+  ],
+  "黑龙江卫视": [
+   {
+    "url": "http://36.110.54.118:866/hls/25/index.m3u8",
+    "score": 0.657,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/047.jpg"
+   }
+  ],
+  "CCTV-6 电影": [
+   {
+    "url": "http://36.110.54.118:866/hls/6/index.m3u8",
+    "score": 0.523,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/051.jpg"
+   }
+  ],
+  "CCTV-16 奥林匹克": [
+   {
+    "url": "http://1.24.39.180:808/hls/60/index.m3u8",
+    "score": 0.574,
+    "width": 1920,
+    "height": 1090,
+    "sources": [
+     "gitee"
+    ],
+    "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/newsrc/frames/054.jpg"
+   }
+  ]
+ }
+}

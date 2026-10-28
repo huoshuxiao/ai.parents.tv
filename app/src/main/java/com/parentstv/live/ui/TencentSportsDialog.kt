@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -79,6 +80,9 @@ private data class TencentEvent(
     val league: String = "",
     val title: String = "",
     val time: String = "",
+    // 官网 matchInfo.startTime（"2026-10-25 19:30:00"）。卡片上那行时间是本地文本、
+    // 可能为空，排序只认这个字段（用户 10-25「列出的场次按时间排序」）。
+    val start: String = "",
     val paid: Boolean = false,
     val live: Boolean = false,
     val vid: String = "",
@@ -88,6 +92,10 @@ private data class TencentEvent(
 }
 
 private const val TX_TAG = "TxBridge"
+
+/** 面板顶部那一条提示的语气。用户 10-26 电视实测「点了挂不知道成没成」：
+ *  成功／失败要整行换底色、加粗放大，不能只当一行 14sp 的灰字。 */
+private enum class Notice { Info, Busy, Success, Error }
 
 private val M3U8_IN_TEXT = Regex("""https?://[^\s"'\\]+\.m3u8[^\s"'\\]*""")
 
@@ -169,6 +177,11 @@ fun TencentSportsDialog(
     var events by remember { mutableStateOf<List<TencentEvent>>(emptyList()) }
     var listLoading by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf("正在打开腾讯体育直播页…") }
+    var statusKind by remember { mutableStateOf(Notice.Busy) }
+    fun say(message: String, kind: Notice = Notice.Info) {
+        status = message
+        statusKind = kind
+    }
     var capturing by remember { mutableStateOf<TencentEvent?>(null) }
     var verifying by remember { mutableStateOf(false) }
     var pastedUrl by remember { mutableStateOf("") }
@@ -192,7 +205,8 @@ fun TencentSportsDialog(
         val line = ManualLine.create(title = title, url = url)
         manualLines = store.add(line)
         onLinesChanged()
-        status = "$title 已挂上（${BeijingTime.format(line.expiresAt, "HH:mm")} 自动摘线）"
+        say("已挂上「$title」——回首页切到「腾讯体育」组就能看到它（${BeijingTime.format(line.expiresAt, "HH:mm")} 自动摘线）",
+            Notice.Success)
         Log.i(TX_TAG, "attached id=${line.id} title=$title")
         capturing = null
         verifying = false
@@ -208,14 +222,14 @@ fun TencentSportsDialog(
             if (!isTencentHost(candidate)) continue
             if (!rejected.add(candidate)) continue
             verifying = true
-            status = "抓到地址，正在验证能不能播…"
+            say("抓到播放地址，正在验证能不能播…", Notice.Busy)
             scope.launch {
                 val result = runCatching { StreamProbe.probe(candidate) }.getOrNull()
                 if (result?.playable == true) {
                     attach(candidate, lineTitle(event))
                 } else {
                     Log.i(TX_TAG, "probe rejected ${result?.error ?: "超时"} url=${candidate.take(90)}")
-                    status = "这条地址取不到画面（${result?.error ?: "超时"}），继续等播放器发下一条…"
+                    say("这条地址取不到画面（${result?.error ?: "超时"}），继续等播放器发下一条…", Notice.Error)
                     verifying = false
                 }
             }
@@ -230,15 +244,25 @@ fun TencentSportsDialog(
         onEvents = { text ->
             val rows = runCatching { json.decodeFromString<List<TencentEvent>>(text) }
                 .getOrDefault(emptyList())
-            events = rows
+            // 已经在直播的排最前，其余按开赛时间从早到晚（用户 10-25「列出的场次按时间排序」）。
+            // start 是官网的 "yyyy-MM-dd HH:mm:ss"，同格式下按字符串比就是按时间比；
+            // 拿不到时间的排最后，不许因为它缺字段就挤到第一场。
+            events = rows.sortedWith(
+                compareByDescending<TencentEvent> { it.live }
+                    .thenBy { it.start.ifBlank { "9999" } }
+                    .thenBy { it.time },
+            )
             listLoading = false
             if (rows.isNotEmpty()) listReady[0] = true
-            if (idle()) {
-                status = if (rows.isEmpty()) {
-                    "没读到赛程（页面结构可能变了，或此刻没有视频直播）"
+            // 成功／失败那条横幅是给人看的结论，别让赛程刷新把它盖掉（用户 10-26 电视实测）。
+            if (idle() && statusKind != Notice.Success && statusKind != Notice.Error) {
+                if (rows.isEmpty()) {
+                    say("没读到赛程：这台设备的网页组件可能打不开腾讯体育，或此刻没有视频直播。" +
+                        "可以直接在下面粘贴播放地址。", Notice.Error)
                 } else {
-                    "共 ${rows.size} 场视频直播（正在直播 ${rows.count { it.live }} 场），" +
-                        "其中 ${rows.count { !it.paid }} 场免费可挂"
+                    say("共 ${rows.size} 场视频场次（正在直播 ${rows.count { it.live }} 场，" +
+                        "待开赛 ${rows.count { !it.live }} 场），其中 ${rows.count { !it.paid }} 场免费可挂",
+                        Notice.Info)
                 }
             }
         },
@@ -247,7 +271,8 @@ fun TencentSportsDialog(
             if (acceptsStream && isTencentHost(url)) handleCaptured(url)
         },
         onNote = { text ->
-            if (idle() && !listReady[0] && text.startsWith("DIAG")) status = text.take(160)
+            // DIAG 只进日志：它不是给人看的结论，挂在面板上会把「已挂上」挤掉（10-26 实测）。
+            Log.i(TX_TAG, "note ${text.take(200)}")
         },
     )
 
@@ -317,7 +342,12 @@ fun TencentSportsDialog(
                 listView.evaluateJavascript(EXTRACT_EVENTS_JS, null)
                 // 这里读不到 Compose 的最新 events（Runnable 在第一次组合时就定住了），
                 // 所以改成固定重试 12 次（36 秒）封顶，够了就停。
-                if (++readTries[0] < 12) ticker.postDelayed(this, 3_000)
+                if (++readTries[0] >= 12) {
+                    if (idle() && statusKind != Notice.Success && statusKind != Notice.Error) {
+                        say("没读到赛程：这台设备的网页组件没打开腾讯体育（或此刻没有视频直播）。" +
+                            "可以在下面直接粘贴播放地址。", Notice.Error)
+                    }
+                } else ticker.postDelayed(this, 3_000)
             }
         }
     }
@@ -350,9 +380,14 @@ fun TencentSportsDialog(
             delay(3_000)
             captureView.evaluateJavascript(CAPTURE_HOOK_JS, null)
             captureView.evaluateJavascript(AUTOPLAY_JS, null)
+            // 倒计时要让人看得见：电视上「点了没反应」多半只是还在等这 45 秒。
+            if (capturing === event && !verifying) {
+                say("正在抓取「${event.displayName}」… 还剩 ${(15 - tick) * 3} 秒", Notice.Busy)
+            }
         }
         if (capturing === event && !verifying) {
-            status = "45 秒内没抓到播放地址：多半是还没开播，或这场需要会员"
+            say("没挂上：45 秒内没抓到播放地址。多半是这场还没开播、或需要会员。" +
+                "可以换一场再按「挂」，或用下面「粘贴地址」。", Notice.Error)
             capturing = null
         }
     }
@@ -374,9 +409,12 @@ fun TencentSportsDialog(
             )
 
             Column(
+                // 以前写死 1000×720dp：1920×1080 的电视在 density 2 下只有 960×540dp，
+                // 面板比屏幕大一圈，最下面那排「粘贴地址」和赛程行的「挂」被切在屏幕外
+                //（用户 10-26 电视实测：点了挂没反应，其实是按钮被裁）。改按屏幕比例留边。
                 modifier = Modifier
-                    .width(1000.dp)
-                    .height(720.dp)
+                    .fillMaxWidth(0.94f)
+                    .fillMaxHeight(0.92f)
                     .clip(RoundedCornerShape(22.dp))
                     .background(TvColors.BackgroundAlt)
                     .border(1.dp, TvColors.Divider, RoundedCornerShape(22.dp))
@@ -402,7 +440,7 @@ fun TencentSportsDialog(
                         onClick = {
                             listLoading = true
                             events = emptyList()
-                            status = "正在刷新赛程…"
+                            say("正在刷新赛程…", Notice.Busy)
                             listView.loadUrl(TENCENT_LIVE_URL)
                             // 刷新也要重新起那个定时器：只靠 onPageFinished 的话，
                             // 这个页面的长连接会让它一直不回调（实测过一次都没有）。
@@ -418,7 +456,44 @@ fun TencentSportsDialog(
                 }
 
                 Spacer(Modifier.height(10.dp))
-                Text(text = status, color = TvColors.Accent, fontSize = 14.sp)
+                // 成功／失败整行换底色＋加粗放大：电视上隔两三米，「已挂上」必须一眼看见。
+                val noticeBg = when (statusKind) {
+                    Notice.Success -> Color(0xFF1C4A2E)
+                    Notice.Error -> Color(0xFF4C1E1E)
+                    Notice.Busy -> TvColors.Surface
+                    Notice.Info -> TvColors.Surface.copy(alpha = 0.6f)
+                }
+                val noticeFg = when (statusKind) {
+                    Notice.Success -> Color(0xFFA9F0C1)
+                    Notice.Error -> Color(0xFFFFC2C2)
+                    else -> TvColors.Accent
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(noticeBg)
+                        .border(1.dp, noticeFg.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (statusKind == Notice.Success) "✓  $status"
+                        else if (statusKind == Notice.Error) "！  $status" else status,
+                        color = noticeFg,
+                        fontSize = if (statusKind == Notice.Success || statusKind == Notice.Error) 18.sp
+                        else 15.sp,
+                        fontWeight = if (statusKind == Notice.Success || statusKind == Notice.Error)
+                            FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "已挂 ${manualLines.size} 条",
+                        color = noticeFg,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
 
                 Box(
@@ -459,7 +534,7 @@ fun TencentSportsDialog(
                                         onRemove = {
                                             manualLines = store.remove(line.id)
                                             onLinesChanged()
-                                            status = "已摘掉「${line.title}」"
+                                            say("已摘掉「${line.title}」", Notice.Info)
                                         },
                                     )
                                 }
@@ -471,7 +546,8 @@ fun TencentSportsDialog(
                                     onAttach = {
                                         capturing = event
                                         verifying = false
-                                        status = "正在打开「${event.displayName}」等播放器发地址…"
+                                        say("正在打开「${event.displayName}」等播放器发地址…（最多 45 秒）",
+                                            Notice.Busy)
                                     },
                                 )
                             }
@@ -487,7 +563,7 @@ fun TencentSportsDialog(
                         val url = pastedUrl.trim()
                         if (url.startsWith("http://") || url.startsWith("https://")) {
                             verifying = true
-                            status = "正在验证粘贴的地址…"
+                            say("正在验证粘贴的地址…", Notice.Busy)
                             scope.launch {
                                 val result = runCatching { StreamProbe.probe(url) }.getOrNull()
                                 if (result?.playable == true) {
@@ -495,12 +571,12 @@ fun TencentSportsDialog(
                                     attach(url, title)
                                     pastedUrl = ""
                                 } else {
-                                    status = "这条地址取不到画面（${result?.error ?: "超时"}）"
+                                    say("这条地址取不到画面（${result?.error ?: "超时"}）", Notice.Error)
                                     verifying = false
                                 }
                             }
                         } else {
-                            status = "地址要以 http:// 或 https:// 开头"
+                            say("地址要以 http:// 或 https:// 开头", Notice.Error)
                         }
                     },
                 )
@@ -676,51 +752,44 @@ private const val DIAGNOSE_JS = """
 })();
 """
 
-// 卡片状态文字（.live-period-desc）会随比赛进行变成「上半场 15'」「第11局」，
-// 光看它分不清「有视频的直播」和「只有图文的直播」——实测 10-25 00:14 把一场
-// 图文直播的意甲列成了「正在直播 · 免费可挂」，点上去当然什么都抓不到。
-// 官网自己轮询的 multiUpdate 里有权威字段：matchInfo.liveType==3 / scheduleStyle.desc
+// 官网自己轮询的 multiUpdate 里有权威字段：matchInfo.liveType / scheduleStyle.desc
 // 写着「视频直播」「图文直播」「已结束」，isPay 与 videoInfo.isPay 管会员，videoInfo.vid 是直播流 id。
-// 所以卡片只用来拿 mid 和台名，能不能挂交给这个接口判。
+// 现读 10-25 20:1x 的页面数据：liveType 3（NBA 等）与 4（F1/赛车/部分球类）都是有视频的场次，
+// 0/1 才是图文或没有视频——旧版只认 3，F1 三场全被过滤掉，列表里只剩 NBA（用户当天反馈）。
 private const val EXTRACT_EVENTS_JS = """
 (function(){
   var API = 'https://matchweb.sports.qq.com/match/multiUpdate?mids=';
   var DEAD = /已结束|回放|集锦|图文直播/;
-  var UPCOMING = /^视频直播$|^未开始$/;
-  var cards = {}, order = [];
-  document.querySelectorAll('a[href*="kbsweb/game"]').forEach(function(a){
-    var m = (a.getAttribute('href') || '').match(/mid=([0-9]+:[0-9]+)/);
-    if (!m || cards[m[1]]) return;
-    var pick = function(sel){ var e = a.querySelector(sel); return e ? e.innerText.replace(/\s+/g, ' ').trim() : ''; };
-    var teams = [];
-    a.querySelectorAll('.team-info .shadow').forEach(function(e){
-      var t = e.innerText.replace(/\s+/g, ' ').trim();
-      if (t && teams.indexOf(t) < 0) teams.push(t);
-    });
-    cards[m[1]] = {
-      league: pick('.match-desc'),
-      title: pick('.title') || teams.join(' vs '),
-      time: pick('.start-time'),
-      period: pick('.live-period-desc'),
-      tag: pick('.row1 .tag')
-    };
-    order.push(m[1]);
-  });
+  var VIDEO_TYPES = {'3': 1, '4': 1};
 
-  var cardOnly = function(mid) {
-    var c = cards[mid];
-    if (!c.period || DEAD.test(c.period)) return null;
-    return {
-      mid: mid, league: c.league, title: c.title, time: c.time,
-      paid: /SVIP|VIP|用券|会员/.test(c.tag || c.period),
-      live: !UPCOMING.test(c.period), vid: ''
-    };
-  };
+  // 不再只扫 DOM 卡片：首页只渲染当前那个 tab 的卡片，F1/赛车在别的 tab 里根本不在 DOM 中。
+  // 页面自己的 __INITIAL_STATE__ 里有今天到明天的全部场次（现读：80 场，含 F1 三场）。
+  var root = window.__INITIAL_STATE__;
+  if (root && root.__v_isRef) root = root._rawValue || root;
+  var found = [], seenMid = {}, visited = new Set();
+  (function walk(o, d){
+    if (!o || typeof o !== 'object' || d > 14 || visited.has(o)) return;
+    visited.add(o);
+    if (Object.prototype.toString.call(o) === '[object Array]') {
+      for (var i = 0; i < o.length; i++) {
+        var v = o[i];
+        if (v && v.matchInfo && v.matchInfo.mid && !seenMid[v.matchInfo.mid]) {
+          seenMid[v.matchInfo.mid] = 1;
+          found.push(v);
+        }
+        walk(v, d + 1);
+      }
+      return;
+    }
+    for (var k in o) { try { walk(o[k], d + 1); } catch (e) {} }
+  })(root, 0);
+
+  var ids = found.map(function(v){ return v.matchInfo.mid; });
+  var parts = [];
+  for (var i = 0; i < ids.length; i += 40) parts.push(ids.slice(i, i + 40));
 
   var run = function(){
-    if (!order.length) return Promise.resolve(false);
-    var parts = [];
-    for (var i = 0; i < order.length; i += 40) parts.push(order.slice(i, i + 40));
+    if (!ids.length) return Promise.resolve(false);
     return parts.reduce(function(chain, part){
       return chain.then(function(info){
         return fetch(API + part.join(','))
@@ -733,26 +802,38 @@ private const val EXTRACT_EVENTS_JS = """
           .catch(function(){ return info; });
       });
     }, Promise.resolve({})).then(function(info){
-      var rows = [];
-      order.forEach(function(mid){
-        var x = info[mid];
-        if (!x) { var fb = cardOnly(mid); if (fb) rows.push(fb); return; }
-        var mi = x.matchInfo || {}, vi = x.videoInfo || {};
-        var desc = (mi.scheduleStyle && mi.scheduleStyle.desc) || '';
-        if (String(mi.liveType) !== '3' && desc.indexOf('视频直播') < 0) return;
-        var c = cards[mid], q = mi.quarter || '';
+      var rows = [], now = Date.now(), WINDOW = 6 * 3600 * 1000;
+      found.forEach(function(v){
+        var mi = v.matchInfo || {mid: ''}, x = info[mi.mid] || {};
+        var xi = x.matchInfo || {}, vi = x.videoInfo || {};
+        var lt = String(xi.liveType || mi.liveType || '');
+        var desc = (xi.scheduleStyle && xi.scheduleStyle.desc) || '';
+        if (!VIDEO_TYPES[lt] && desc.indexOf('视频直播') < 0) return;
+        if (DEAD.test(desc)) return;
+        var start = xi.startTime || mi.startTime || '';
+        var st = Date.parse(start.replace(/-/g, '/'));
+        // 已经结束超过 6 小时的场次不再列（回放/集锦在上面已经被 DEAD 挡掉）。
+        if (!isNaN(st) && st < now - WINDOW) return;
+        var left = mi.leftName || mi.title || '';
+        var right = mi.rightName || '';
+        var title = (mi.title || (right ? (left + ' vs ' + right) : left)).trim();
         rows.push({
-          mid: mid,
-          league: c.league || (mi.matchDesc || ''),
-          title: c.title || (mi.title || ''),
-          time: c.time,
+          mid: mi.mid,
+          league: mi.matchDesc || xi.matchDesc || '',
+          title: title,
+          time: start ? start.slice(5, 16) : '',
+          start: start,
           paid: String(x.isPay) === '1' || String(vi.isPay) === '1',
-          live: !!q && q !== '未开始',
+          live: !isNaN(st) && st <= now && now - st < WINDOW,
           vid: vi.vid || ''
         });
       });
-      // 正在直播的排最前：Array.sort 在现代 V8 里是稳定的，其余保持官网顺序。
-      rows.sort(function(a, b){ return (b.live ? 1 : 0) - (a.live ? 1 : 0); });
+      // 正在直播的排最前；其余按开赛时间从早到晚（用户 10-25「列出的场次按时间排序」）。
+      rows.sort(function(a, b){
+        if (a.live !== b.live) return a.live ? -1 : 1;
+        var sa = a.start || '9999', sb = b.start || '9999';
+        return sa < sb ? -1 : (sa > sb ? 1 : 0);
+      });
       ParentsTvBridge.onEvents(JSON.stringify(rows));
       return rows.length > 0;
     });

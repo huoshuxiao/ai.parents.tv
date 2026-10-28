@@ -136,6 +136,7 @@ fun iconForCategory(id: String): ImageVector = when (id) {
     "hktw" -> Icons.Rounded.Public
     "featured" -> Icons.Rounded.Movie
     "sports" -> Icons.Rounded.SportsSoccer
+    "tencent" -> Icons.Rounded.SportsSoccer
     "international" -> Icons.Rounded.Language
     else -> Icons.Rounded.LiveTv
 }
@@ -402,6 +403,7 @@ fun PlayerActionButton(
     focusRequester: FocusRequester? = null,
     enabled: Boolean = true,
     accent: Boolean = false,
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     val fallbackFocus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
@@ -427,7 +429,10 @@ fun PlayerActionButton(
                 shape = shape,
             )
             .focusRequester(focusRequester ?: fallbackFocus)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

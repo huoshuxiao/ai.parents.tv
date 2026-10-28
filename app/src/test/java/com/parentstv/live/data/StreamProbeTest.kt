@@ -262,4 +262,44 @@ class StreamProbeTest {
         "RIFF".toByteArray().copyInto(avi, 0); "AVI ".toByteArray().copyInto(avi, 8)
         assertEquals("AVI", StreamProbe.undemuxableContainer(avi))
     }
+
+    /**
+     * 「线路清晰度计算一次就好，不需要每次打开线路时都重算」（用户 10-26 指令）。
+     *
+     * 盯四种会说谎的情形：
+      · A 算过了还重探——面板每开一次就把本台每条线重探一遍，抢正在播那条的首片带宽（＝「缓冲中」）。
+      · B 按了「重新检测」却不重探——用户主动要新读数，缓存不许挡。
+      · C 缓存串台——同一条地址的两种写法要认得是同一枚（按规范地址存），但别的地址不许蹭。
+      · D 记了却读不到——rememberResult 与 cached 必须用同一把归一尺，否则缓存永远不命中（恒探）。
+     */
+    @Test
+    fun clarityIsComputedOncePerLine() {
+        val fresh = "http://10.20.30.40/live/once-a.m3u8"
+        val other = "http://10.20.30.40/live/once-b.m3u8"
+        val streams = listOf(fresh, other)
+        val hit = StreamProbe.Result(12L, 34L, 0L, null, "1920×1080")
+
+        // A 的正对照：两条都没算过 ⇒ 全都要探。
+        assertEquals(listOf(0 to fresh, 1 to other), StreamProbe.linesToProbe(streams, force = false))
+        // D：记一笔之后必须读得回来，并且规划器不再安排它。
+        StreamProbe.rememberResult(fresh, hit)
+        assertEquals(hit, StreamProbe.cached(fresh))
+        assertEquals(listOf(1 to other), StreamProbe.linesToProbe(streams, force = false))
+        // B：按了「重新检测」⇒ 算过的那条也要重探。
+        assertEquals(2, StreamProbe.linesToProbe(streams, force = true).size)
+        // C：缓存不许蹭到别的地址上（other 仍然没算过；单独成表时它的下标是 0）。
+        assertNull(StreamProbe.cached(other))
+        assertEquals(listOf(0 to other), StreamProbe.linesToProbe(listOf(other), force = false))
+        // A 的负对照：同一枚地址换一种写法（多一个无害的查询串顺序）仍算"已算过"。
+        val sameUrl = "$fresh?x=1"
+        StreamProbe.rememberResult(sameUrl, hit)
+        if (StreamUrl.canonical(sameUrl) == StreamUrl.canonical(fresh)) {
+            assertTrue(StreamProbe.linesToProbe(listOf(fresh), force = false).isEmpty())
+        }
+        // 负对照（同一把尺的另一侧）：完全没见过的地址必须安排探，不许被缓存误判成"算过"。
+        assertEquals(
+            listOf(0 to "http://10.20.30.40/live/never-seen.m3u8"),
+            StreamProbe.linesToProbe(listOf("http://10.20.30.40/live/never-seen.m3u8"), force = false),
+        )
+    }
 }

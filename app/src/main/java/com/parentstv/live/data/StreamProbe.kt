@@ -45,6 +45,32 @@ object StreamProbe {
     suspend fun probe(url: String): Result = withContext(Dispatchers.IO) { probeBlocking(url) }
 
     /**
+     * 这一次开机里已经算过清晰度的线：规范地址 -> 读数（只在主线程读写，见 PlayerScreen 那段探测协程）。
+     *
+     * 用户 10-26 指令「线路清晰度计算一次就好，不需要每次打开线路时都重算」：选线面板一开就并发
+     * 探本台每一条线，每路十几秒，抢走的正是**正在播的那条线**的首片带宽——屏幕上看到的就是「缓冲中」。
+     * 缓存只活在进程里：目录会被「立即更新线路」换掉，清晰度也随源变，重启后重新算一次是对的。
+     */
+    private val resolved = mutableMapOf<String, Result>()
+
+    /** 这条线这一次开机算过没有；算过就给读数，没算过给 null。 */
+    fun cached(url: String): Result? = resolved[StreamUrl.canonical(url)]
+
+    /** 探完记一笔（同一条地址再来一次不重算）。 */
+    fun rememberResult(url: String, result: Result) {
+        resolved[StreamUrl.canonical(url)] = result
+    }
+
+    /**
+     * 面板这一趟要探哪几条线——纯函数，生产与夹具跑的是同一条路。
+     * [force]（按了「重新检测」）时全都要重算；否则只算开机缓存里没有的那几条。
+     */
+    fun linesToProbe(streams: List<String>, force: Boolean): List<Pair<Int, String>> =
+        streams.withIndex()
+            .filter { (_, url) -> force || cached(url) == null }
+            .map { (index, url) -> index to url }
+
+    /**
      * 预热「下一个要看的那条线」：把清单、变体、首片各走一遍，让 DNS/TCP/TLS 与分片路径先热起来。
      * 只取 64 KB、不判断可用性、不写任何状态、失败当没发生（换台时该连的还得连）。
      *

@@ -13,6 +13,7 @@
   Q 组（5 格）：模板只吃说了同一角的那几帧；角标并列时按用户裁决优先左上（并列里没有左上才退回台账先后），
      且四个 PYTHONHASHSEED 下必须定同一个角（旧写法 max(set(...)) 由哈希随机化决定）
 """
+import json
 import os
 import subprocess
 import sys
@@ -149,6 +150,7 @@ def main():
     pos = frame(OUT / "pos.jpg", (40, 110, 150), (95, 62))
     neg = frame(OUT / "neg.jpg", (30, 90, 60), None, shape=True)
     tr = frame(OUT / "tr.jpg", (60, 60, 90), (940, 60))
+    tr2 = frame(OUT / "tr2.jpg", (90, 40, 70), (936, 62))
 
     loc = "tl"
     tpl = np.median(np.stack([lc.corner(lc.edge_map(lc.load_gray(str(p))), loc) for p in (t1, t2)]), axis=0)
@@ -157,11 +159,67 @@ def main():
     s_flip = lc.score_edges(lc.corner(lc.edge_map(lc.load_gray(str(pos))), loc), np.rot90(tpl, 2))
     s_tr = lc.score_frame(str(tr), tpl, loc)
 
+    # 右上角那一套模板：用 tr 建、拿 tr2 验（不同背景、位置差 4/2 像素），避免自匹配冒充泛化。
+    tpl_tr = lc.corner(lc.edge_map(lc.load_gray(str(tr))), "tr")
+    s_tr_ok = lc.score_frame(str(tr2), tpl_tr, "tr")
+    s_tl_via_tr = lc.score_frame(str(pos), tpl_tr, "tr")
+    s_neg_via_tr = lc.score_frame(str(neg), tpl_tr, "tr")
+
+    frames_jsonl = OUT / "frames_multi_corner.jsonl"
+    frames_jsonl.write_text("\n".join(json.dumps({"channel": "甲", "frame": str(p)}, ensure_ascii=False)
+                                      for p in (pos, tr2, neg)) + "\n", encoding="utf-8")
+    both = lc.build_templates([
+        {"name": "甲", "frame": str(t1), "logo": '台标相符（左上角「甲」）', "url": None},
+        {"name": "甲", "frame": str(t2), "logo": '台标相符（左上角「甲」）', "url": None},
+        {"name": "甲", "frame": str(tr), "logo": '台标相符（右上角「甲」）', "url": None},
+    ])["甲"]
+    run_out = OUT / "program_multi_corner.jsonl"
+    lc.run_frames({"甲": both}, frames_jsonl, run_out)
+    run_rows = [json.loads(x) for x in run_out.read_text(encoding="utf-8").splitlines() if x.strip()]
+    by_frame = {os.path.basename(r["frame"]): r for r in run_rows}
+
+    # 附加单帧模板（人工看过的那一帧）只许加分、不许减分：基线只有左上模板时右上帧不算有，
+    # 附上人工那枚右上模板后必须算有；同一张左上帧的分数不许被附加模板拉低。
+    base_only = lc.build_templates([
+        {"name": "甲", "frame": str(t1), "logo": '台标相符（左上角「甲」）', "url": None},
+        {"name": "甲", "frame": str(t2), "logo": '台标相符（左上角「甲」）', "url": None},
+    ])["甲"]
+    with_extra = dict(base_only)
+    with_extra["extras"] = lc.extra_templates(
+        [{"name": "甲", "frame": str(tr), "logo": '台标相符（右上角「甲」）', "url": None}])["甲"]
+    out_base, out_extra = OUT / "program_base.jsonl", OUT / "program_extra.jsonl"
+    lc.run_frames({"甲": base_only}, frames_jsonl, out_base)
+    lc.run_frames({"甲": with_extra}, frames_jsonl, out_extra)
+    base_by = {os.path.basename(r["frame"]): r for r in
+               (json.loads(x) for x in out_base.read_text(encoding="utf-8").splitlines() if x.strip())}
+    extra_by = {os.path.basename(r["frame"]): r for r in
+                (json.loads(x) for x in out_extra.read_text(encoding="utf-8").splitlines() if x.strip())}
+
     cells = [
         ("A 正对照 ≥ T_HI", s_pos >= lc.T_HI, f"{s_pos:.3f} (T_HI={lc.T_HI})"),
         ("B 负对照 < T_LO", s_neg < lc.T_LO, f"{s_neg:.3f} (T_LO={lc.T_LO})"),
         ("C 牙齿：旋转模板更低", s_flip < s_pos - 0.2, f"rot={s_flip:.3f} vs {s_pos:.3f}"),
-        ("D 台标在右上、按左上裁不判有", s_tr < lc.T_HI, f"{s_tr:.3f}"),
+        ("D1 右上模板对另一张右上帧仍判有", s_tr_ok >= lc.T_HI, f"{s_tr_ok:.3f}（背景不同、位置差 4/2 px）"),
+        ("D2 左上模板对右上帧不判有（所以必须按角建模板）", s_tr < lc.T_HI, f"{s_tr:.3f}"),
+        ("D3 右上模板对左上帧不判有（不许拿角标模板乱认）", s_tl_via_tr < lc.T_HI, f"{s_tl_via_tr:.3f}"),
+        ("D4 右上模板对无台标帧 < T_LO", s_neg_via_tr < lc.T_LO, f"{s_neg_via_tr:.3f}"),
+        ("E1 一个频道同时有左上/右上两套模板", set(both["templates"]) == {"tl", "tr"}, str(sorted(both["templates"]))),
+        ("E2 run_frames：左上帧按 tl 判有", by_frame["pos.jpg"]["check"] == "有台标" and by_frame["pos.jpg"]["loc"] == "tl",
+         f'{by_frame["pos.jpg"]["check"]} loc={by_frame["pos.jpg"]["loc"]} {by_frame["pos.jpg"]["score"]}'),
+        ("E3 run_frames：右上帧按 tr 判有", by_frame["tr2.jpg"]["check"] == "有台标" and by_frame["tr2.jpg"]["loc"] == "tr",
+         f'{by_frame["tr2.jpg"]["check"]} loc={by_frame["tr2.jpg"]["loc"]} {by_frame["tr2.jpg"]["score"]}'),
+        ("E4 run_frames：无台标帧不许判有", by_frame["neg.jpg"]["check"] != "有台标",
+         f'{by_frame["neg.jpg"]["check"]} {by_frame["neg.jpg"]["score"]}'),
+        ("F1 对照组：只有左上模板时，右上帧不算有", base_by["tr2.jpg"]["check"] != "有台标",
+         f'{base_by["tr2.jpg"]["check"]} {base_by["tr2.jpg"]["score"]}'),
+        ("F2 附加一枚人工右上模板后，右上帧判有", extra_by["tr2.jpg"]["check"] == "有台标"
+         and extra_by["tr2.jpg"]["loc"] == "tr",
+         f'{extra_by["tr2.jpg"]["check"]} loc={extra_by["tr2.jpg"]["loc"]} {extra_by["tr2.jpg"]["score"]}'),
+        ("F3 附加模板不许把原来判得的分数拉低（取最大值）",
+         float(extra_by["pos.jpg"]["score"]) >= float(base_by["pos.jpg"]["score"]) - 1e-9,
+         f'{base_by["pos.jpg"]["score"]} → {extra_by["pos.jpg"]["score"]}'),
+        ("F4 附加模板对无台标帧仍不许判有", extra_by["neg.jpg"]["check"] != "有台标",
+         f'{extra_by["neg.jpg"]["check"]} {extra_by["neg.jpg"]["score"]}'),
     ]
     cells += verdict_cells()
     cells += parser_cells()

@@ -74,6 +74,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
 
+    // 盒子没有 audio/mpeg-L2 解码器，MP2 音轨靠这份纯 Java 软解（链子里 gradle 是 --offline，故吃仓库内 jar）。
+    implementation(files("libs/jlayer-1.0.1.jar"))
+
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 

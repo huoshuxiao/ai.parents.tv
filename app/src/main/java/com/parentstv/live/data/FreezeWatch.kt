@@ -41,6 +41,24 @@ object FreezeWatch {
         return h
     }
 
+    /**
+     * 这一帧是不是「根本没读到画面」：前 [count] 个像素的 **RGB 全是 0**（不看 alpha）。
+     *
+     * 为什么要有这一格：10-26 在小米电视 MiTV-ASTP0 上实测，PixelCopy 回的是 SUCCESS，
+     * 但拿回来的整块是黑（`0xFF000000` 这种不透明纯黑也算）——视频走硬件叠加层，不在这张位图里。
+     * [hash] 只取 RGB、丢掉 alpha，所以「不透明纯黑」与「全 0 空缓冲」撞成同一个常数哈希
+     * （256×144 那一档实测恒等于 -3823061780159657145）。于是这台电视上每台都会在 30 秒后
+     * 被读成「画面冻住」，白白重连一次：屏幕上一阵黑＋一句不散的「缓冲中/正在连接」。
+     * **看不见就等于没有读数，不判冻**，交回播放器侧那几把尺。
+     */
+    fun isBlank(pixels: IntArray, count: Int): Boolean {
+        val n = minOf(count, pixels.size)
+        for (i in 0 until n) {
+            if (pixels[i] and 0x00FFFFFF != 0) return false
+        }
+        return true
+    }
+
     class State {
         var lastHash: Long = 0L
         var sinceMs: Long = -1L

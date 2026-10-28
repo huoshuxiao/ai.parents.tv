@@ -73,8 +73,8 @@ class ManualLineStore(context: Context) {
     }
 
     /**
-     * 把未过期的临时线并进目录：每场一条台，挂在体育组最后一个台后面，
-     * 这样台号顺延、也不打乱「体育频道」原有顺序。
+     * 把未过期的临时线并进目录：每场一条台，放进**腾讯体育**分组（用户 10-25：
+     * 分组排在国际频道之后；挂上之后在主页那个组里就能看到，不再混进「体育频道」）。
      */
     fun merged(catalog: ChannelCatalog, now: Long = System.currentTimeMillis()): ChannelCatalog {
         val lines = load(now)
@@ -83,17 +83,29 @@ class ManualLineStore(context: Context) {
             TvChannel(
                 id = "manual-${line.id}",
                 name = line.title,
-                category = "sports",
+                category = "tencent",
                 subgroup = "腾讯体育",
                 logo = "",
                 streams = listOf(line.url),
             )
         }
         val channels = catalog.channels.toMutableList()
-        val lastSports = channels.indexOfLast { it.category == "sports" }
-        val insertAt = if (lastSports >= 0) lastSports + 1 else channels.size
+        // 腾讯体育在 CATEGORY_ORDER 里排最后；插在国际频道那几个台之后就等于「组内第一条」。
+        val lastInternational = channels.indexOfLast { it.category == "international" }
+        val insertAt = if (lastInternational >= 0) lastInternational + 1 else channels.size
         channels.addAll(insertAt, manual)
-        return catalog.copy(channels = channels)
+        // 设备上可能还缓存着旧目录（分类表里没有 tencent），这里补一份定义，
+        // 否则主页侧栏没有这个组、挂上的场次等于隐身。
+        val categories = if (catalog.categories.any { it.id == "tencent" }) {
+            catalog.categories
+        } else {
+            catalog.categories + CategoryDef(
+                id = "tencent",
+                name = "腾讯体育",
+                subgroups = listOf("腾讯体育"),
+            )
+        }
+        return catalog.copy(categories = categories, channels = channels)
     }
 
     private fun saveLocked(lines: List<ManualLine>) {

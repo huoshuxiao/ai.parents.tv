@@ -1,5 +1,13 @@
 {
   "note": "卫视组「按台标改挂」确认清单（用户 10-25 指令：卫视频道，台标与频道不一致的，根据台标移入对应卫视频道）。两道闸都过才许写进来：①tools/.cache/wshi_mismatch.py 跨模板打分（本台 own < T_LO 且某台 other ≥ T_HI，且来自 ≥2 个不同事件）；②人工看单张角标帧（多格拼图不算复核——10-25 就是拿两列拼图肉眼看错一枚草书台标，差点摘掉一条能用的线）。构建层不判定，只按这份清单搬运，并把结果写进目录的 lineMoves 供设备端挡回公开列表里的旧台名。",
   "thresholds_note": "T_LO=0.30 T_HI=0.45（tools/logo_check.py 现读）",
-  "moves": []
+  "moves": [
+    {
+      "url": "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8",
+      "from": "东方卫视",
+      "to": "新纪实",
+      "cross_group": true,
+      "evidence": "用户 10-27 电视上指认「不是本台实时播放节目」并指令「移到 地方频道」。三层现读：①清单无 ENDLIST、30 秒里 MEDIA-SEQUENCE 走 10 格（3 秒片＝实时节奏）；②6/6 分片都是 /material/<32位hash>/2025/0107/video/<素材id>-NNNNN.ts 存好的素材，30 秒内素材 id 从 96e3d2b4fb964bd8b739fbd33751242e 换成 af73874e2695439a90afbc0dfcaabcf0；③14:11 帧（gate/round_r65/frames/cctv-0959c89081/line0/frame_first.jpg，md5 1c28b888234ac85f31916fccfa710086）左上角「新纪实 LIVE24」＋右上「看东方」水印＋右侧竖排《东滩 鸟类的家园》。证据文件 tools/.cache/bestv_20261027/playlist_evidence_20261027.json。落点「新纪实」是本次新建的 local/上海 台（现读 local 159 台里没有任何纪实/人文台）。"
+    }
+  ]
 }

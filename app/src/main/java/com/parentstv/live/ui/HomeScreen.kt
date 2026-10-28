@@ -132,6 +132,7 @@ fun HomeScreen(
         selectedCategoryId == "featured" -> "影视轮播 · NewTV · CHC · 少儿"
         selectedCategoryId == "sports" -> "五星体育 · 咪咕直播 · 港台体育"
         selectedCategoryId == "international" -> "新闻 · 纪实 · 综合"
+        selectedCategoryId == "tencent" -> "设置页挂上的腾讯体育场次 · 过点自动摘线"
         else -> "电视直播"
     }
 
@@ -220,7 +221,7 @@ fun HomeScreen(
                 }
                 if (visibleChannels.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        EmptyState(isFavorites = isFavorites)
+                        EmptyState(isFavorites = isFavorites, categoryId = selectedCategoryId)
                     }
                 }
             }
@@ -358,7 +359,7 @@ private fun HomeHeader(
 }
 
 @Composable
-private fun EmptyState(isFavorites: Boolean) {
+private fun EmptyState(isFavorites: Boolean, categoryId: String = "") {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -373,17 +374,22 @@ private fun EmptyState(isFavorites: Boolean) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = if (isFavorites) "还没有收藏频道" else "这个分类暂时没有频道",
+            text = when {
+                isFavorites -> "还没有收藏频道"
+                // 用户 10-26 电视实测：这个组空着时只说「这个分类没有频道」，没人知道该去哪儿挂。
+                categoryId == "tencent" -> "还没有挂上的腾讯体育场次"
+                else -> "这个分类暂时没有频道"
+            },
             fontSize = 24.sp,
             fontWeight = FontWeight.SemiBold,
             color = TvColors.TextPrimary,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = if (isFavorites) {
-                "播放频道时，在控制栏点按爱心即可收藏"
-            } else {
-                "可以试试其他分类或省份"
+            text = when {
+                isFavorites -> "播放频道时，在控制栏点按爱心即可收藏"
+                categoryId == "tencent" -> "去「设置 → 腾讯体育 · 手动挂」按一场；挂上后回这里就能看到，6 小时后自动摘线"
+                else -> "可以试试其他分类或省份"
             },
             fontSize = 16.sp,
             color = TvColors.TextSecondary,

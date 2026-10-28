@@ -192,19 +192,29 @@ def build_templates(reviews):
     out = {}
     for name, all_rows in by.items():
         loc = dominant_loc(all_rows)
-        locs_seen = dict(collections.Counter(corner_of_verdict(r["logo"]) for r in all_rows))
-        rows = [r for r in all_rows if corner_of_verdict(r["logo"]) == loc]
-        frames = []
-        for r in rows[:6]:
-            try:
-                frames.append(corner(edge_map(load_gray(r["frame"])), loc))
-            except Exception:
-                continue
-        if not frames:
+        by_corner = {}
+        for r in all_rows:
+            by_corner.setdefault(corner_of_verdict(r["logo"]), []).append(r)
+        corner_tpls, corner_sources = {}, {}
+        for c, rows in by_corner.items():
+            frames = []
+            for r in rows[:6]:
+                try:
+                    frames.append(corner(edge_map(load_gray(r["frame"])), c))
+                except Exception:
+                    continue
+            if frames:
+                corner_tpls[c] = np.median(np.stack(frames), axis=0)
+                corner_sources[c] = [r["frame"] for r in rows[:6]]
+        if loc not in corner_tpls:
             continue
-        out[name] = {"loc": loc, "template": np.median(np.stack(frames), axis=0),
-                     "sources": [r["frame"] for r in rows[:6]], "n_sources": len(frames),
-                     "locs_seen": locs_seen}
+        # 一个频道可以有两套模板（人工台账里同时有「左上」和「右上」的例子，用户 10-25
+        # 的判据就是「台标在画面左上或右上」）。`template`/`loc` 仍是多数角那一套，
+        # 老调用点（门禁队列、卫视改挂）不用改。
+        out[name] = {"loc": loc, "template": corner_tpls[loc],
+                     "templates": corner_tpls,
+                     "sources": corner_sources[loc], "n_sources": len(corner_sources[loc]),
+                     "locs_seen": dict(collections.Counter(corner_of_verdict(r["logo"]) for r in all_rows))}
     return out
 
 
@@ -315,6 +325,27 @@ def verdict_logo(scores, own_name):
     return "灰区", others[0][1], others[0][0]
 
 
+def extra_templates(rows):
+    """人工看过的那几帧，按各自角位单独当一枚模板（不并进中位数）。
+
+    10-25 实测：把回测人工帧混进同角中位数，湖南卫视的左上模板被稀释——同一条线
+    三帧明明都有芒果台标，分数从 0.285 掉到 0.09、凭空多出一条删除候选。所以这里
+    只**追加**模板，`run_frames` 取最大值 ⇒ 分数只可能升，不会把原来判得的判没。
+    """
+    out = {}
+    for r in rows:
+        if not r.get("name") or not r.get("frame") or not str(r.get("logo", "")).startswith("台标相符"):
+            continue
+        loc = corner_of_verdict(r["logo"])
+        try:
+            patch = corner(edge_map(load_gray(r["frame"])), loc)
+        except Exception:
+            continue
+        out.setdefault(r["name"], []).append({"loc": loc, "template": patch,
+                                             "source": r["frame"]})
+    return out
+
+
 def run_frames(templates, frames_jsonl, out_path):
     rows = []
     for raw in open(frames_jsonl, encoding="utf-8"):
@@ -330,8 +361,20 @@ def run_frames(templates, frames_jsonl, out_path):
         if not t:
             rows.append({**report, "check": "无模板", "score": None})
             continue
-        s = score_frame(frame, t["template"], t["loc"])
-        rows.append({**report, "check": classify(s), "score": round(s, 3)})
+        base = t.get("templates") or {t["loc"]: t["template"]}
+        cands = [(loc, tpl) for loc, tpl in base.items() if loc in ("tl", "tr")]
+        # 附带的单帧模板（人工看过的帧）只追加、不替换，取最大值 ⇒ 只会救回。
+        for i, e in enumerate(t.get("extras") or []):
+            if e["loc"] in ("tl", "tr"):
+                cands.append((f'{e["loc"]}#extra{i}', e["template"]))
+        # 用户口径只认左上/右上；这两个角都没有模板时才退回多数角
+        # （多半是右下/左下，调用方会写成「角不在左/右上」交人工，不按"无台标"删）。
+        if not cands:
+            cands = [(t["loc"], t["template"])]
+        scores = {label: score_frame(frame, tpl, label[:2]) for label, tpl in cands}
+        best = max(scores, key=scores.get)
+        rows.append({**report, "check": classify(scores[best]), "score": round(scores[best], 3),
+                     "loc": best[:2], "loc_scores": {k: round(v, 3) for k, v in scores.items()}})
     with open(out_path, "w", encoding="utf-8") as fh:
         for r in rows:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")

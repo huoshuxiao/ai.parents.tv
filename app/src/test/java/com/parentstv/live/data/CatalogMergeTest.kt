@@ -238,18 +238,23 @@ class CatalogMergeTest {
         assertFalse(CatalogMerge.isBlocked(escaped, emptySet()))
     }
 
+    /**
+     * 用户 10-28 16:3x 改口：「播过那条豁免规则调整，已正常播的线路保留，有台标，不正常的删除」。
+     * 判死的线即使这台电视播过、甚至正指着它，也要从目录里删掉。
+     *
+     * 旧行为（10-21 起）是「播过就豁免」，真机上的病正是它：重庆/山西/江苏/浙江/广西/青海 六台的
+     * `line_*` 都指着被拉黑的死线，每次切台先撞死线、缓冲十秒。
+     */
     @Test
-    fun thisTvAlreadyPlayedThatLineSoTheBlockListDoesNotApply() {
-        // 用户 10-21 指令「已播过的线路绝不自动换线/换台」压过黑名单：
-        // 境外抽帧看到的坏，抵不过这台电视真出过画面。
+    fun playedLineIsNoLongerExemptFromTheBlockList() {
         val played = "http://74.91.26.218:82/live/cctv3hd.m3u8"
         val other = "http://39.135.138.58:18890/PLTV/88888888/224/3221225634/index.m3u8"
         val blocked = setOf(StreamUrl.canonical(played))
         val merged = CatalogMerge.streams("CCTV-3 综艺", listOf(other), listOf(played), played, blocked)
-        assertEquals("播过的那条留下并排第一", listOf(played, other), merged)
-        // 负对照：同一个黑名单、没播过记录时，那条线必须被挡掉（不然这一格就成了恒真）。
-        assertEquals(emptyList<String>(),
-            CatalogMerge.streams("CCTV-3 综艺", emptyList(), listOf(played), null, blocked))
+        assertEquals("判死的线即使播过也不许留下，本台只剩那一条好线", listOf(other), merged)
+        // 负对照：没进黑名单时，播过那条仍按老规矩排第一（证明这一格咬的是黑名单，不是排序）。
+        assertEquals(listOf(played, other),
+            CatalogMerge.streams("CCTV-3 综艺", listOf(other), listOf(played), played, emptySet()))
     }
 
     /**
@@ -343,5 +348,134 @@ class CatalogMergeTest {
         val other = "http://148.135.240.114:88/live.php?id=ln"
         assertEquals(listOf(playedPlain, other),
             CatalogMerge.probeOrder(listOf(other, playedPlain), 1, playedEscaped))
+    }
+
+    // ---- 包内目录新增的线要落到设备上（10-28：两份目录 generatedAt 相等时也必须落） ----
+
+    /** 设备缓存里东方卫视的六条原样（10-28 12:43 `files/channels_live.json` 现读）。 */
+    private val dfCached = listOf(
+        "http://107.150.60.122/live/dfwshd.m3u8",
+        "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=dfwshd",
+        "http://36.110.54.118:866/hls/28/index.m3u8",
+        "http://iptv.huuc.edu.cn/hls/dfhd.m3u8",
+        "http://t.061899.xyz/tl/tl.php?id=dfws",
+        "https://zby.130519.xyz/PLTV/11/224/3221225725/index.m3u8",
+    )
+
+    /** 打进 APK 的东方卫视四条（10-28 目录现读）。 */
+    private val dfPackaged = listOf(
+        "http://107.150.60.122/live/dfwshd.m3u8",
+        "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=dfwshd",
+        "http://36.110.54.118:866/hls/28/index.m3u8",
+        "http://27.129.145.110:4433/hls/40/index.m3u8",
+    )
+
+    @Test
+    fun packagedLineTheDeviceLacksIsReportedAsExtra() {
+        assertEquals(
+            "只报 27.129 这条；缓存独有的三条不许混进来，已有的三条也不许当新增",
+            listOf("http://27.129.145.110:4433/hls/40/index.m3u8"),
+            CatalogMerge.extrasInAssetOnly(dfPackaged, dfCached),
+        )
+    }
+
+    @Test
+    fun alreadyLandedLineIsNotExtraAgain() {
+        // 落过一次之后再跑，必须是空的——否则每次更新都会当成"新增"去写盘。
+        val landed = dfCached + "http://27.129.145.110:4433/hls/40/index.m3u8"
+        assertTrue(CatalogMerge.extrasInAssetOnly(dfPackaged, landed).isEmpty())
+    }
+
+    @Test
+    fun emptyOrDifferentSpellingCacheBehaves() {
+        assertEquals(dfPackaged, CatalogMerge.extrasInAssetOnly(dfPackaged, emptyList()))
+        // 同一条只是写法不同（协议/主机大小写、默认端口、尾斜杠）不算新增。
+        val spelledDifferently = listOf(
+            "HTTP://107.150.60.122:80/live/dfwshd.m3u8/",
+            "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=dfwshd",
+            "http://36.110.54.118:866/hls/28/index.m3u8",
+        )
+        assertEquals(
+            listOf("http://27.129.145.110:4433/hls/40/index.m3u8"),
+            CatalogMerge.extrasInAssetOnly(dfPackaged, spelledDifferently),
+        )
+    }
+
+    /** 新增那条若背着黑名单（目录判过坏），合并时仍要被挡掉——只有"新"不是放行理由。 */
+    @Test
+    fun extraStillObeysBlocklist() {
+        val extra = "http://27.129.145.110:4433/hls/40/index.m3u8"
+        val merged = CatalogMerge.streams(
+            "东方卫视", dfCached, listOf(extra),
+            blocked = setOf(StreamUrl.canonical(extra)),
+            category = "cctv", assetOrder = dfPackaged,
+        )
+        assertTrue("黑名单里的新增线不许进来", merged.none { StreamUrl.sameLine(it, extra) })
+        val ok = CatalogMerge.streams(
+            "东方卫视", dfCached, listOf(extra),
+            category = "cctv", assetOrder = dfPackaged,
+        )
+        assertTrue("没有黑名单时必须落进来", ok.any { StreamUrl.sameLine(it, extra) })
+        assertEquals("一条都不许删", dfCached.size + 1, ok.size)
+        assertEquals("央视·卫视按包内次序：前三条仍是包内前三", dfPackaged.take(3), ok.take(3))
+    }
+
+    // ---- 包内判死的线也要能落到设备上（资产与设备条数统一，10-28） ----
+
+    /** 设备东方卫视的 7 条（10-28 14:0x 现读）：前四条是资产里的，后三条是公开源补进来且三轮回测全灭的。 */
+    private val dfDevice7 = dfPackaged + listOf(
+        "http://iptv.huuc.edu.cn/hls/dfhd.m3u8",
+        "http://t.061899.xyz/tl/tl.php?id=dfws",
+        "https://zby.130519.xyz/PLTV/11/224/3221225725/index.m3u8",
+    )
+
+    private val dfBlocked = setOf(
+        "http://iptv.huuc.edu.cn/hls/dfhd.m3u8",
+        "http://t.061899.xyz/tl/tl.php?id=dfws",
+        "https://zby.130519.xyz/PLTV/11/224/3221225725/index.m3u8",
+    )
+
+    @Test
+    fun deadLinesStillInDeviceCacheAreCounted() {
+        assertEquals(
+            "设备 7 条里有 3 条已被包内黑名单判死 ⇒ 更新器不许因为时间戳相同就整条跳过",
+            3,
+            CatalogMerge.blockedInUseCount(dfDevice7, dfBlocked),
+        )
+    }
+
+    /**
+     * 用户 10-28 16:3x 改口：「播过那条豁免规则调整，已正常播的线路保留，有台标，不正常的删除」。
+     * 所以「这台电视正看着的那条线」也不再从黑名单里豁免——它被判死就该删。
+     * 这一格挡的是把旧例外又悄悄加回来：真机现场正是六台卫视的 `line_*` 指着死线、
+     * 每次切台先撞死线缓冲十秒。
+     */
+    @Test
+    fun theLineBeingPlayedIsNoLongerExempt() {
+        val played = "http://iptv.huuc.edu.cn/hls/dfhd.m3u8"
+        assertTrue("判死的线即使正在播也要算进待删", CatalogMerge.isBlocked(played, dfBlocked))
+        assertEquals(
+            "三条判死全算，不再有「播过那条」的减项",
+            3,
+            CatalogMerge.blockedInUseCount(dfDevice7, dfBlocked),
+        )
+    }
+
+    /** 黑名单为空或设备本来就没有这些地址 ⇒ 0，更新器照旧走 12 小时节流。 */
+    @Test
+    fun nothingToDropCountsAsZero() {
+        assertEquals(0, CatalogMerge.blockedInUseCount(dfDevice7, emptySet()))
+        assertEquals(0, CatalogMerge.blockedInUseCount(dfPackaged, dfBlocked))
+    }
+
+    /** 合并之后设备这一台就只剩资产那四条：三轮回测全灭的三条被黑名单挡掉。 */
+    @Test
+    fun mergingDropsTheDeadOnesAndKeepsFour() {
+        val merged = CatalogMerge.streams(
+            "东方卫视", dfDevice7, emptyList(),
+            blocked = dfBlocked, category = "cctv", assetOrder = dfPackaged,
+        )
+        assertEquals("7 条摘掉 3 条死线＝4 条", 4, merged.size)
+        assertTrue("留下的必须是资产那四条", dfPackaged.all { want -> merged.any { StreamUrl.sameLine(it, want) } })
     }
 }

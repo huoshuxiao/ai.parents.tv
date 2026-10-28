@@ -45,7 +45,7 @@
       台级删除同日再宽一格（用户 10-24 #92 点档「认台标」＝乙，作废上一条那句「保留线不等于保留台」）：
       整台一条画面实证都没有、但有一条地址为本台验过台标 ⇒ 台留着，单独计数 logo_only_kept；
       has_picture / has_picture_now 一行没动 ⇒ 这种台照样进报告的「没有可用画面」名单。43b 盯这一格的反面。
- 44 卫视组删线（用户 10-23 17:5x「不可用线路删除」）：台内「连接超时」线删掉、实证线留下、进 sat_pruned 名单
+ 44 卫视组删线（用户 10-23 17:5x「不可用线路删除」）：台内「连接超时」线删掉、实证线留下、进 tier3_pruned 名单
  44b 负对照：同形状非卫视组，台内线路一条不动（这台只删卫视组的线，不外溢）
  45 「响应超时」同一把尺删
  45b 负对照：设备实测播过的那条「连接超时」线不许删（「已播过的线路绝不换线」盖过删线指令）
@@ -666,45 +666,49 @@ bc.IDENTITY = {}
 bc.FRAME_PLACEHOLDER = {}
 bc.DEVICE_PROOF = {}
 surv44, st44 = run_strict([mk("测试卫视", "cctv", "卫视", [V1, V2, V3])])
-check("44 卫视组删线：台内「连接超时／响应超时」线删掉、实证线留下、删掉的线带台名+归一键+对端结论进 sat_pruned 名单",
+check("44 卫视组删线：台内「连接超时／响应超时」线删掉、实证线留下、删掉的线带台名+归一键+对端结论进 tier3_pruned 名单",
       [c["name"] for c in surv44] == ["测试卫视"] and surv44[0]["streams"] == [V1]
-      and {c for _, c, _ in st44["sat_pruned"]} == {canon(V2), canon(V3)}
-      and {v for _, _, v in st44["sat_pruned"]} == {"连接超时", "响应超时"},
-      f"剩线={surv44[0]['streams']} 删线名单={st44['sat_pruned']}")
-surv44b, st44b = run_strict([mk("测试县台", "local", "河南", [V1, V2])])
-check("44b 负对照：同形状非卫视组，台内线路一条不动（这台只删卫视组的线，不外溢到六组）",
-      surv44b[0]["streams"] == [V1, V2] and st44b["sat_pruned"] == []
+      and {c for _, c, _ in st44["tier3_pruned"]} == {canon(V2), canon(V3)}
+      and {v for _, _, v in st44["tier3_pruned"]} == {"连接超时", "响应超时"},
+      f"剩线={surv44[0]['streams']} 删线名单={st44['tier3_pruned']}")
+surv44b, st44b = run_strict([mk("测试体育台", "sports", "咪咕", [V1, V2])])
+check("44b 负对照：同形状在作用域外的组（体育），台内线路一条不动（10-27 点档「3」只扩到地方/国际/港澳台，没点体育与央视名册）",
+      surv44b[0]["streams"] == [V1, V2] and st44b["tier3_pruned"] == []
       and st44b["dropped_no_source"] == 0,
-      f"剩线={surv44b[0]['streams']} 删线名单={st44b['sat_pruned']}")
+      f"剩线={surv44b[0]['streams']} 删线名单={st44b['tier3_pruned']}")
+surv44c, st44c = run_strict([mk("测试县台", "local", "河南", [V1, V2, V3])])
+check("44c 放行：同一形状改挂到地方组（用户 10-27 点档「3」扩进来的那一档）⇒ 两条超时线摘掉、实证线留下",
+      surv44c[0]["streams"] == [V1] and len(st44c["tier3_pruned"]) == 2,
+      f"剩线={surv44c[0]['streams']} 删线名单={st44c['tier3_pruned']}")
 bc.DEVICE_PROOF = {canon(V2): "测试卫视"}
 surv45, st45 = run_strict([mk("测试卫视", "cctv", "卫视", [V1, V2])])
 check("45 负对照：设备实测播过的那条「连接超时」线不许删（『已播过的线路绝不自动换线』盖过删线指令）",
-      surv45[0]["streams"] == [V1, V2] and st45["sat_pruned"] == [],
-      f"剩线={surv45[0]['streams']} 删线名单={st45['sat_pruned']}")
+      surv45[0]["streams"] == [V1, V2] and st45["tier3_pruned"] == [],
+      f"剩线={surv45[0]['streams']} 删线名单={st45['tier3_pruned']}")
 bc.DEVICE_PROOF = {}
 bc.FRAME_RES = {canon(V1): FR, canon(V2): FR}
 surv46, st46 = run_strict([mk("测试卫视", "cctv", "卫视", [V2])])
 check("46 卫视台只剩「连接超时」但抽过帧的线：删无可删时一条不动（不许把有画面实证的台删空）",
       [c["name"] for c in surv46] == ["测试卫视"] and surv46[0]["streams"] == [V2]
-      and st46["sat_pruned"] == [] and st46["dropped_no_source"] == 0,
-      f"剩线={surv46[0]['streams']} 删线名单={st46['sat_pruned']}")
+      and st46["tier3_pruned"] == [] and st46["dropped_no_source"] == 0,
+      f"剩线={surv46[0]['streams']} 删线名单={st46['tier3_pruned']}")
 bc.IDENTITY = {f"测试卫视|{canon(V2)}": "台标相符"}
 surv47, st47 = run_strict([mk("测试卫视", "cctv", "卫视", [V1, V2])])
 check("46b 负对照：同一形状把身份换成台标相符 ⇒ 档 0、留下（证明咬的是证据档位那一格，不是台名）",
-      surv47[0]["streams"] == [V1, V2] and st47["sat_pruned"] == [],
-      f"剩线={surv47[0]['streams']} 删线名单={st47['sat_pruned']}")
+      surv47[0]["streams"] == [V1, V2] and st47["tier3_pruned"] == [],
+      f"剩线={surv47[0]['streams']} 删线名单={st47['tier3_pruned']}")
 bc.IDENTITY = {}
 surv48, st48 = run_strict([mk("测试卫视", "cctv", "卫视", [V2, V3])])
 check("47 台内同为档 3：抽过帧的那条留下、没实证的那条删掉（『曾经出过真实画面的线就留』按条生效）",
       surv48[0]["streams"] == [V2]
-      and st48["sat_pruned"] == [("测试卫视", canon(V3), "响应超时")],
-      f"剩线={surv48[0]['streams']} 删线名单={st48['sat_pruned']}")
+      and st48["tier3_pruned"] == [("测试卫视", canon(V3), "响应超时")],
+      f"剩线={surv48[0]['streams']} 删线名单={st48['tier3_pruned']}")
 surv49, st49 = run_strict([mk("七龙珠", "featured", "影视轮播", [V2]),
                             mk("咪咕直播 1", "sports", "咪咕直播", [V2])])
 check("48 特色频道整组删除（用户 10-23 20:0x「删除特色频道」）：有画面实证的台也删、计数单独一格、别的组不动",
       [c["name"] for c in surv49] == ["咪咕直播 1"]
       and st49["dropped_featured"] == 1 and st49["dropped_no_source"] == 0
-      and st49["sat_pruned"] == [],
+      and st49["tier3_pruned"] == [],
       f"剩台={[c['name'] for c in surv49]} featured删={st49['dropped_featured']}")
 
 # ── 49 甲：慢线挪到台内最后（用户 10-23 20:5x 点档「甲」）
@@ -780,7 +784,11 @@ def line_conflicts(channels, dead=DEAD_PREFIXES):
                    if u.startswith(dead.get(c["name"], ()))})
 
 _shipped = json.loads((BASE / "app/src/main/assets/channels.json").read_text(encoding="utf-8"))["channels"]
-KNOWN_CONFLICT = [("CCTV-4K 超高清", "http://8.138.7.223/tv/cctvnews.php?id=cctv4k")]
+# 10-27 点档甲之前，这一枚是登记过的例外（#94 丙＝CCTV-4K 那条 8.138 代理"先不动"）。
+# 甲把 `8.138.7.223` 那 12 条**逐条重放都 302 到同一枚定长广告片**后全部摘掉＋拉黑，例外被这一批吃掉
+# ⇒ 期望改成"冲突必须为 0"（比原来更严：以前允许那一枚在册，现在一枚都不许有）。
+# #94 那句「尺子留着」没受影响——`tools/logo_check.py` 那把台标尺一个字没动。
+KNOWN_CONFLICT = []
 found = line_conflicts(_shipped)
 check("50 名单交叉对表：按台名摘掉又被备份名单加回来的线，只准有登记过的那一枚（#94）",
       found == KNOWN_CONFLICT and len(DEAD_PREFIXES) >= 8,

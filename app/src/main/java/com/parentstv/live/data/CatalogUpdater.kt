@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -37,7 +38,25 @@ class CatalogUpdater(private val context: Context) {
         // 10-23 13:46 装机后首页仍显示旧目录 44/15，就是被这个节流整个跳过了。
         val assetsNewer = cached == null || !notOlderThan(cached.generatedAt, assets.generatedAt)
         val stale = isStale(now)
-        if (!force && !stale && !assetsNewer) {
+        // 包内目录新增的线：即便两份目录的 `generatedAt` 相等（10-28 现读那份就是这样，
+        // 内容改过、时间戳没动），装新包这一下也要把它们落到设备上，否则新线永远上不了电视。
+        val assetExtra: Map<String, List<String>> = cached?.let { cache ->
+            assets.channels.mapNotNull { asset ->
+                val cachedStreams = cache.channels.firstOrNull { it.id == asset.id }?.streams
+                    ?: return@mapNotNull null
+                val extras = CatalogMerge.extrasInAssetOnly(asset.streams, cachedStreams)
+                if (extras.isEmpty()) null else asset.id to extras
+            }.toMap()
+        } ?: emptyMap()
+        val settings = TvPrefs(context)
+        // 包内黑名单已经判死、设备缓存却还在用的地址：判死的线也要能落到设备上（见 blockedInUseCount）。
+        val blockedInUse: Int = cached?.let { cache ->
+            val assetBlocked = assets.blockedLines.keys
+            cache.channels.sumOf { ch ->
+                CatalogMerge.blockedInUseCount(ch.streams, assetBlocked)
+            }
+        } ?: 0
+        if (!force && !stale && !assetsNewer && assetExtra.isEmpty() && blockedInUse == 0) {
             return@withContext UpdateResult(
                 addedLines = 0,
                 successSources = 0,
@@ -75,19 +94,38 @@ class CatalogUpdater(private val context: Context) {
 
         var added = 0
         var changed = false
-        val settings = TvPrefs(context)
         // 目录生成时实测判坏的那些地址（随 channels.json 一起装进 APK）。
         // 公开源下一次还会把它们带回来，合并时按黑名单挡掉——这是「可用性优于数量」在设备端的那一环。
-        val blocked = base.blockedLines.keys
+        // 10-28：**只认包内那一份**。①只取 `base.blockedLines` 时，两份目录 generatedAt 相同 ⇒ base 就是缓存
+        // ⇒ APK 新判死的地址永远不生效（现读：装机后一条没摘）；②取 base ∪ assets 又会把**缓存里的旧拉黑**
+        // 复活（黑龙江卫视 idclive、浙江卫视 ali-m-l 这两条「复活两源」当年被拉黑过，缓存里还留着，
+        // 一并集就把刚从资产里救回来的线又挡掉了）。资产是随包发布的当前裁决，缓存只是它的旧快照。
+        val blocked = assets.blockedLines.keys
+        // 用户 10-28 点档「乙」：公开源新发现的地址不再直接进目录，必须先出现在打进 APK 的
+        // `line_allowlist.json`（由 tools/vet_line_candidates.py 探过清单/分片/画面才写）；
+        // 不在白名单的一律写进 files/line_candidates.json 等下一轮过闸。
+        val allowlist = runCatching {
+            context.assets.open(ALLOWLIST_ASSET).bufferedReader().use { it.readText() }
+        }.map { LineAllowlist.parse(it) }.getOrDefault(emptyList())
+        val candidatesFound = mutableListOf<CandidateLine>()
         // 构建按台标改挂过的那些地址（台标证据在 tools/wshi_logo_moves.json，理由写在每条记录里）。
         val moves = base.lineMoves
         val merged = base.channels.mapNotNull { channel ->
-            val fresh = discovered[normalize(channel.name)].orEmpty()
+            val (fresh, notAllowlisted) = LineAllowlist.admit(
+                discovered[normalize(channel.name)].orEmpty(), allowlist,
+            )
+            // 只记「目录里还没有、又没过闸」的那些；公开源照例会把已有地址再送一遍，别当成候选。
+            notAllowlisted.forEach { url ->
+                if (channel.streams.none { StreamUrl.sameLine(it, url) }) {
+                    candidatesFound += CandidateLine(channel.name, url)
+                }
+            }
             // 台标实测属于本台、却常被公开源挂到别名下的线，改挂进来并排在最前；
             // 新线路之间按 IPv6 优先排；这台电视真出过画面的那条顶到第一条——
             // 但央视·卫视与地方频道两组除外（用户 2026-10-25：清晰度排序压过播过置顶），
             // 那两组按打进 APK 的那一份目录复位，连旧版本已经置顶在缓存里的那条也一并归位。
-            val lines = CatalogMerge.streams(channel.name, channel.streams, fresh,
+            val lines = CatalogMerge.streams(channel.name, channel.streams,
+                fresh + assetExtra[channel.id].orEmpty(),
                 settings.lineFor(channel.id), blocked, moves, channel.category,
                 (assets.channels.firstOrNull { it.id == channel.id }?.streams ?: channel.streams))
             added += lines.count { kept ->
@@ -109,16 +147,27 @@ class CatalogUpdater(private val context: Context) {
         // 用户 2026-10-22 要求：「立即更新」不只补地址，还要把线路可用性探一遍，
         // 探到能出画面的那条就排到最前。后台自动更新（force=false）不探，那是要在电视上默默跑的。
         // 预算按「这台缺不缺能播的线」分配（用户 2026-10-22：线路可用性优于频道数量）：
+        // 包内新增的「整台」：`base`（设备缓存）里没有的，按 id 补进来。
+        // 10-28 现读：包内 278 台、设备在用 277 台，缺的正是新建的河北卫视——
+        // 上面那段只遍历 `base.channels`，于是「线能加、台加不进来」。
+        val knownIds = base.channels.mapTo(HashSet()) { it.id }
+        val assetOnly = assets.channels.filter { it.id !in knownIds }
+        val mergedAll = if (assetOnly.isEmpty()) merged else {
+            changed = true
+            added += assetOnly.sumOf { it.streams.size }
+            merged + assetOnly
+        }
+
         // 必看台先探，接着探**这台电视上从没出过画面**的台，看过的台不占预算；仍然限时，
         // 超预算的台留到下一次按按钮，不然这一下要挂十几分钟。
-        val targets = probeTargets(merged, settings)
+        val targets = probeTargets(mergedAll, settings)
         val outcomes = if (force) probeAvailability(targets) { channel -> settings.lineFor(channel.id) } else null
         val probeSkipped = outcomes?.let { targets.size - it.size }
         val channels = if (outcomes == null) {
-            merged
+            mergedAll
         } else {
             val probed = outcomes.associateBy { it.channel.id }
-            merged.map { probed[it.id]?.channel ?: it }
+            mergedAll.map { probed[it.id]?.channel ?: it }
         }
 
         // 只删不增也要落盘，否则清理掉的失效线路会一直留在旧缓存里。
@@ -126,8 +175,11 @@ class CatalogUpdater(private val context: Context) {
         // 界面读的是缓存文件，光在内存里换底不换文件，旧缓存里那些新版本已经判坏的线路一条都没被清掉。
         // （10-22 现读到的形状：升级后若公开源这一轮没补新线、次序也没变，以前这一格直接跳过写盘，
         //   脏缓存原样留在设备上，界面上的坏线一根没少。）
+        if (candidatesFound.isNotEmpty()) recordCandidates(candidatesFound)
+
         if (added > 0 || changed || outcomes != null || base === assets) {
-            val updated = base.copy(channels = channels)
+            // 黑名单也一起同步成包内那一份：设备上那份是旧快照，留着它会让"资产已复活/已判死"两边打架。
+            val updated = base.copy(channels = channels, blockedLines = assets.blockedLines)
             cacheFile.writeText(json.encodeToString(updated))
         }
         val replaced = base === assets
@@ -345,8 +397,41 @@ class CatalogUpdater(private val context: Context) {
             }
     }
 
+    @Serializable
+    private data class CandidateLine(val channel: String, val url: String)
+
+    @Serializable
+    private data class CandidateFile(
+        val generatedAt: String = "",
+        val items: List<CandidateLine> = emptyList(),
+    )
+
+    /**
+     * 把「公开源送来、但不在白名单里」的地址累加进 `files/line_candidates.json`（按地址去重）。
+     * 只记账、不改目录：闸在 `tools/vet_line_candidates.py`，探过清单/分片/画面之后才写进
+     * `assets/line_allowlist.json`，下一版 APK 才准它们自动进目录（用户 10-28 点档「乙」）。
+     */
+    private fun recordCandidates(found: List<CandidateLine>) {
+        val file = File(context.filesDir, CANDIDATES_NAME)
+        val old = runCatching {
+            if (file.exists()) json.decodeFromString(CandidateFile.serializer(), file.readText()) else null
+        }.getOrNull()
+        val seen = old?.items.orEmpty().mapTo(HashSet()) { StreamUrl.canonical(it.url) }
+        val items = old?.items.orEmpty() + found.filter { seen.add(StreamUrl.canonical(it.url)) }
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            .format(java.util.Date())
+        runCatching {
+            file.writeText(json.encodeToString(CandidateFile.serializer(), CandidateFile(stamp, items)))
+        }
+    }
+
     private companion object {
         const val CACHE_NAME = "channels_live.json"
+        /** 打进 APK 的白名单：只有列在这里的地址才准由公开源自动加进目录（用户 10-28 点档「乙」）。 */
+        const val ALLOWLIST_ASSET = "line_allowlist.json"
+        /** 没过闸的新地址落这里，等 `tools/vet_line_candidates.py` 探完再进白名单。 */
+        const val CANDIDATES_NAME = "line_candidates.json"
         const val KEY_LAST_UPDATE = "last_update"
         const val KEY_LAST_ADDED = "last_added"
         const val UPDATE_INTERVAL_MS = 12L * 60 * 60 * 1000
@@ -399,13 +484,38 @@ internal object CatalogMerge {
                 assetOrder: List<String> = emptyList()): List<String> {
         val merged = (RelabeledStreams.linesFor(channelName) + packaged +
             fresh.sortedByDescending { StreamUrl.isIpv6(it) })
-            .filterNot { DeadStreams.isDead(it) || isBlocked(it, blocked, playable) }
+            .filterNot { DeadStreams.isDead(it) || isBlocked(it, blocked) }
             .filterNot { StreamRules.neverPlayable(it) != null }
             .filterNot { RelabeledStreams.belongsElsewhere(channelName, it, moves) }
             .distinctBy { StreamUrl.canonical(it) }
         return if (category in RESOLUTION_FIRST_CATEGORIES) byAssetOrder(merged, assetOrder)
         else putPlayableFirst(merged, playable)
     }
+
+    /**
+     * 打进 APK 的那一份里有、设备缓存里没有的线路。
+     *
+     * 为什么要单独一格：内置换底只认 `generatedAt`（见 `refresh` 里 `assetsNewer`），
+     * 而 10-28 现读的那份目录内容改过、时间戳还是 `2026-10-27T09:25:08Z`，
+     * 与设备缓存**逐字相同** ⇒ 装新包后新加的线一条都落不到电视上
+     * （现读：设备 `files/channels_live.json` 277 台/604 条，东方卫视 6 条里没有当天新加的
+     * `27.129.145.110:4433`）。这一格按地址归一比较，与时间戳无关。
+     *
+     * 只回答「新增哪些」，一条都不删：缓存里那些公开源带回的线要不要清，仍归 `streams()` 的规则管。
+     */
+    fun extrasInAssetOnly(assetStreams: List<String>, cachedStreams: List<String>): List<String> =
+        assetStreams.filter { asset -> cachedStreams.none { StreamUrl.sameLine(it, asset) } }
+
+    /**
+     * 设备缓存里还在用、而包内黑名单已经判死的地址数（10-28 起播过也不例外，见 [isBlocked]）。
+     *
+     * 与 [extrasInAssetOnly] 是同一件事的两半：「目录里新加的线要能落到设备上」和「目录判死的线
+     * 也要能从设备上摘掉」，都不能因为两份目录的 `generatedAt` 相等就整条跳过。
+     * 10-28 现读：设备 `files/channels_live.json` 607 条、包内 455 条，多出来的那批里有三条
+     * 东方卫视的旧线三轮回测全灭（超时／连接重置／TLS 握手失败），黑名单写死了却落不到设备。
+     */
+    fun blockedInUseCount(cachedStreams: List<String>, blocked: Set<String>): Int =
+        cachedStreams.count { isBlocked(it, blocked) }
 
     /**
      * 按打进 APK 那一份目录的次序重排。
@@ -429,13 +539,14 @@ internal object CatalogMerge {
     /**
      * 目录证据判坏的地址：公开源下一次还会把它带回来，合并时按归一键挡掉。
      *
-     * 「这台电视真出过画面」的那条**例外**（用户 2026-10-22 指令：已播过的线路绝不自动换线/换台）——
-     * 这台机器（与电视同一个宽带、有 IPv6 出口）抽帧看到的坏，抵不过那台电视真播出来过一副画面，那种线留着。
+     * 用户 10-28 16:3x 改口：「**播过那条豁免规则调整，已正常播的线路保留，有台标，不正常的删除**」
+     * （原 10-22 是「播过的那条一律留着」）。⇒ 黑名单就是「不正常」的名单：一条线被判死，
+     * 即使这台电视播过它，也从目录里删掉。现读现场正是这条规则要治的病：重庆/山西/江苏/浙江/广西/青海
+     * 六台的 `line_*` 都指着被拉黑的死线，每次切台都先撞死线、缓冲十秒才轮到好线。
+     * 「保留」那一半不受影响——正常播、台标相符的线本来就不会进黑名单。
      */
-    fun isBlocked(stream: String, blocked: Set<String>, played: String? = null): Boolean {
-        if (StreamUrl.canonical(stream) !in blocked) return false
-        return played.isNullOrBlank() || !StreamUrl.sameLine(stream, played)
-    }
+    fun isBlocked(stream: String, blocked: Set<String>): Boolean =
+        StreamUrl.canonical(stream) in blocked
 
     /**
      * 「立即更新」探测之后怎么排这一台的线路：探到的那条上到第 1 位，

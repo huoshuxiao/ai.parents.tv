@@ -97,4 +97,53 @@ class FreezeWatchTest {
         assertFalse(FreezeWatch.observe(st, h, FreezeWatch.SILENCE_MS + 3_000))
         assertTrue(FreezeWatch.observe(st, h, FreezeWatch.SILENCE_MS * 2 + 3_000))
     }
+
+    @Test
+    fun `F7 全 0 缓冲算看不见，不算画面冻住`() {
+        // 10-26 小米电视 MiTV-ASTP0 现读：PixelCopy 回 SUCCESS 但整块是黑，
+        // 哈希恒等于 -3823061780159657145（＝256×144 空缓冲逐位算出来的那个数）。
+        val blank = IntArray(256 * 144)
+        assertTrue(FreezeWatch.isBlank(blank, blank.size))
+        assertEquals(-3823061780159657145L, FreezeWatch.hash(blank))
+    }
+
+    @Test
+    fun `F8 不透明纯黑也算看不见（哈希不看 alpha，与空缓冲撞成同一个数）`() {
+        val opaqueBlack = IntArray(256 * 144) { 0xFF000000.toInt() }
+        assertTrue(FreezeWatch.isBlank(opaqueBlack, opaqueBlack.size))
+        assertEquals(FreezeWatch.hash(IntArray(256 * 144)), FreezeWatch.hash(opaqueBlack))
+    }
+
+    @Test
+    fun `F9 只要有一个像素 RGB 非 0 就不算空缓冲`() {
+        val real = IntArray(256 * 144)
+        real[12345] = 0xFF203040.toInt()   // 一个带颜色的像素：这台电视真把画面交出来了
+        assertFalse(FreezeWatch.isBlank(real, real.size))
+        assertNotEquals(FreezeWatch.hash(IntArray(256 * 144)), FreezeWatch.hash(real))
+    }
+
+    @Test
+    fun `F10 count 之外残留的旧像素不许替这一帧说话`() {
+        // 采样窗口比缓冲区小时只看前 count 个；后面残留的那一点颜色不算数。
+        val stale = IntArray(10)
+        stale[9] = 0xFF0000FF.toInt()
+        assertTrue(FreezeWatch.isBlank(stale, 5))
+        assertFalse(FreezeWatch.isBlank(stale, 10))
+    }
+
+    @Test
+    fun `F11 帧计数那条读数（#152 甲）：帧号在涨永不报，停住满阈值才报一次`() {
+        // 甲档把解码帧号当读数喂给同一个 observe。两种真读数：
+        //  ① 25fps 正常播放：每 3 秒多 75 帧，连续 5 分钟一次都不许报；
+        //  ② 解码停了：帧号停在 9000，第 29.9 秒不报、第 30 秒报一次、之后不再报。
+        val live = FreezeWatch.State()
+        for (k in 0..100) {                 // 0 → 300 秒
+            assertFalse("正常播放第 $k 个采样点被判冻", FreezeWatch.observe(live, 9000L + k * 75, k * FreezeWatch.SAMPLE_MS))
+        }
+        val dead = FreezeWatch.State()
+        assertFalse(FreezeWatch.observe(dead, 9000L, 70_000L))
+        assertFalse(FreezeWatch.observe(dead, 9000L, 99_999L))
+        assertTrue(FreezeWatch.observe(dead, 9000L, 100_000L))
+        assertFalse(FreezeWatch.observe(dead, 9000L, 200_000L))
+    }
 }

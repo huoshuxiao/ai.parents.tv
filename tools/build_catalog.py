@@ -25,6 +25,8 @@ CACHE = BASE / "tools" / ".cache"
 OUT = BASE / "app" / "src" / "main" / "assets" / "channels.json"
 DEFAULT_HEALTH = CACHE / "health" / "line_health.jsonl"
 DEFAULT_FRAMES = CACHE / "prepack" / "line_frames.jsonl"
+# 人工点档的「降序」名册（只换序、不删线）：三轮回测三轮 0 帧＋35 秒长窗仍 0 帧的线挪到台内末位。
+DEMOTE_FILE = BASE / "tools" / "demote_lines.json"
 
 # 每频道线路数上限：0 表示不限（实际可用线路有多少就留多少）。
 MAX_STREAMS = 0
@@ -97,6 +99,10 @@ AUDIO_ONLY_PREFIXES = ("https://piccpndali.v.myalicdn.com/audio/",
 # 「连不上」（拒绝、DNS 解不出、主机不可达）从这一族挪出去，落到可删那一档：
 # 那是对端/网络层主动回了「这个连接不认」，不像超时那样还可能只是慢。
 NO_REPLY = {"连接超时", "响应超时"}
+
+# 档 3「本机连不通」可删的作用域。用户 10-23 那次点档只批了卫视组；
+# 10-27 点档「3 从卫视组扩到地方/国际/港澳台」⇒ 加上这三组，央视名册与体育仍不动。
+TIER3_PRUNE_CATS = {"local", "international", "hktw"}
 
 # 播放器解不了的容器（health_probe 按字节头嗅出来的，与 StreamRules.unsupportedContainer 同一件事
 # 的两种来源：一种看扩展名，一种看真身）。这类线在电视上一定是黑屏。
@@ -246,7 +252,8 @@ def evidence(url, name=""):
         # 有「台标相符」的地址根本进不了这个集合（compute_retest_cuts 那把尺已经排掉）。
         return (4, 0)
     if canon in CCTV3_CUT:
-        # 央视·卫视三轮回测：三轮都无本台台标（人工复核过），或三轮都没帧且无台标实证。
+        # 央视·卫视三轮回测：三轮都无本台台标（人工复核过），三轮都没帧且无台标实证，
+        # 或任一轮抽出「服务器超负载…微信扫码」告警页（用户 10-26 真机点档）。
         # 理由随地址进黑名单，设备端自动更新不会把它们捞回来。
         return (4, 0)
     verdict = IDENTITY.get(key)
@@ -291,9 +298,45 @@ def evidence(url, name=""):
     return 4, 0
 
 
+PINNED = set()   # 用户点档「钉回目录」的地址（归一键），每轮构建从名册重载；夹具直接改这一格。
+
+
+def pin_specs(specs=None):
+    """名册里 `pin: true` 那一格＝用户点档「钉回目录」的地址（与 `apply_demotions` 同一份名册）。
+
+    用户 10-27 #149 点档「甲」：`Al Jazeera 半岛电视台` 唯一那条线在构建收得到的 11 轮 health
+    台账里 10 轮「可取到分片」、只有 10-27 15:45 那一轮回了「清单404」⇒ 按 10-21 口径算时刻性坏，
+    线留着、只降分，台不许整台消失。
+    """
+    if specs is None:
+        specs = json.loads(DEMOTE_FILE.read_text(encoding="utf-8")).get("lines") or []
+    return {stream_rules.canon(s["url"]) for s in specs if s.get("pin") and s.get("url")}
+
+
+def pin_rescues(name, url):
+    """这一条「钉回」能救回什么——只挡**按 health 判词**发起的删除（时刻性/网络性那一类）。
+
+    钉不动的那几类都是**稳定坏**，与这一轮的回话无关：长窗冻帧、三轮回测定案、央视·卫视三轮
+    无台标定案、播放器解不开的容器、抽帧看到的占位页、台标认出来是别的台。人工名册不许把这几类
+    捞回来（要捞得先改判据，那是要单独点档的事）。
+    """
+    canon = stream_rules.canon(url)
+    if canon not in PINNED:
+        return False
+    if FROZEN.get(canon) or canon in RETEST_CUT or canon in CCTV3_CUT or FRAME_PLACEHOLDER.get(canon):
+        return False
+    row = HEALTH.get(canon)
+    if row and row.get("verdict") in PLAYER_UNDEMUXABLE:
+        return False
+    verdict = IDENTITY.get(f"{name}|{canon}")
+    if verdict and verdict not in IDENTITY_GOOD:
+        return False
+    return True
+
+
 def usable(name, url):
     """这条线路还配留在目录里吗。判据只有这一处，排序和删除都从这里过。"""
-    return (not DROP_DEAD) or evidence(url, name)[0] < BAD_TIER
+    return (not DROP_DEAD) or pin_rescues(name, url) or evidence(url, name)[0] < BAD_TIER
 
 
 FRESH_RES = {}   # 「本轮」那一份帧文件抽到过画面的地址（归一键）。必看台的闸门只认它，旧帧只证明曾经能播。
@@ -442,7 +485,7 @@ SD_MIN_WIDTH = 1200
 SD_TITLE = re.compile(r"(?:^|[\s\-_/·(（\[])(?:标清|SD)(?:$|[\s\-_/·)）\]])", re.IGNORECASE)
 
 
-def is_sd_line(url, raw=""):
+def is_sd_line(url, raw="", manual=False):
     """这条线是不是「标清」。用户 10-25 指令：「全频道删除标清线路，未来新增的线路也不添加标清线路」。
 
     尺寸未知、标题里也没有「标清」档名的 ⇒ 不判标清（不摘）。宁可留一条未知，
@@ -452,12 +495,18 @@ def is_sd_line(url, raw=""):
     if size:
         w, h = size
         return h <= SD_MAX_HEIGHT and w < SD_MIN_WIDTH
+    if manual:
+        # 用户点名加的手工备份线：第三方列表给的那行原文可能挂着「标清」档名，
+        # 而本机实测是 1080p（10-28 黑龙江 idclive 就是这么被误摘的）。没实测才轮到档名，
+        # 手工线在没实测时不按档名摘。
+        return False
     return bool(SD_TITLE.search(raw or ""))
 
 
 # ── 清晰度这一档（用户 10-25 指令「全频道删除标清线路，未来新增的线路也不添加标清线路，
 #    删除没有线路的频道」＋「央视·卫视、地方频道，线路按清晰度由高到低排序」）──────
 DROP_SD = True        # --keep-sd 把它关掉；关掉的试算里标清线原样留着，用于对表
+MANUAL_LINES = set()  # 手工备份线（manual_backups/sat_manual_backups 追加的）：判标清时不看第三方标题档名
 STREAM_RAW = {}       # 规范地址 -> 公开列表原文那一行（尺寸没读到的线靠它判「标清」档名）
 SD_DROPPED = []       # 本轮摘掉的标清线（台名, 地址, 尺寸/原文），[definition] 那一笔报数用
 SD_EXEMPT = []        # 必留名单里「整台都是标清」所以原样保留的那几条
@@ -521,7 +570,7 @@ PROVINCE_GROUPS = set(PROVINCE_ORDER)
 # 用户 10-25 00:0x：「频道分组顺序，央视·卫视、体育频道、地方频道、港澳台频道、国际频道」
 # ⇒ sports 提到 local 前（19:5x 那格）之后再越过 hktw，港澳台落到地方之后。
 # featured「特色频道」现读 0 台（10-23 20:3x 整组删台），放在 hktw 前只影响它自己那条 tab 的位置。
-CATEGORY_ORDER = ["cctv", "sports", "local", "hktw", "featured", "international"]
+CATEGORY_ORDER = ["cctv", "sports", "local", "hktw", "featured", "international", "tencent"]
 CATEGORY_NAMES = {
     "cctv": "央视·卫视",
     "local": "地方频道",
@@ -529,6 +578,9 @@ CATEGORY_NAMES = {
     "featured": "特色频道",
     "sports": "体育频道",
     "international": "国际频道",
+    # 用户 10-25：「加腾讯体育频道分组在国际频道后」。这个组由设备端「手动挂」临时线填充，
+    # 构建产物里一般没有台，但分类定义要一直在，否则设置页挂上的场次无处可去。
+    "tencent": "腾讯体育",
     # 「无画面单独分组」（用户 2026-10-22 指令）：目录里一条正常画面证据都没有的台收在这里，
     # subgroup 保持原样（省份/组名不丢），所以播放器里仍显示「待验证 · 河南」这种。
     "pending": "待验证",
@@ -558,7 +610,52 @@ SUBGROUP_ORDER = {
     "featured": ["影视轮播", "NewTV", "CHC", "少儿"],
     "sports": ["国内体育", "咪咕直播", "港台体育"],
     "international": ["新闻", "纪实", "综合"],
+    "tencent": ["腾讯体育"],
 }
+
+# 整台换组：台名 → (category, subgroup)。覆盖点在 builder.add（所有公开源/手工源唯一的收口点），
+# 所以同一条台不管从哪份列表进来都落进同一个键，不会分裂成两个台。
+# ⚠️换组会改掉频道 id：id = sha1(category|subgroup|台名) 前 10 位（见 final_channels），
+# 设备端收藏、`line_<id>` 记住的线路、last_channel 三处都挂在 id 上。落这批前 192.168.1.4 现读：
+# favorites 键不存在（133 个键里 0 枚）、这台记住的线路就是它自己的线 1、last_channel 是别的台
+# ⇒ 这台电视上换 id 的实际损失量出来是 0。以后要动别的台，先按这三处重新量一遍。
+# 目标组必须已在 SUBGROUP_ORDER 里声明——首页分组那一段（present[cat] ∩ SUBGROUP_ORDER[cat]）
+# 只认声明过的 subgroup，写错一个字的后果是这台在界面上整个消失，所以这里直接拒绝起构建。
+CHANNEL_GROUP_OVERRIDE = {
+    "山东教育卫视": {
+        "category": "local",
+        "subgroup": "山东",
+        "why": "用户 10-27 原话「山东教育卫视 频道 页放 地方频道」：整台从 央视·卫视 挪到 地方频道·山东，"
+               "线路一条不删、不进黑名单",
+    },
+}
+
+
+def group_overridden(name):
+    """这台是不是被「整台换组」名单点过名——表键是 norm_key 归一后的，比较也必须走同一把尺。"""
+    return norm_key(name) in CHANNEL_GROUP_OVERRIDE
+
+
+def group_move_coverage(channels):
+    """换组名单的「实效力」两列：真落进目录的台、名单点了名却没进目录的台。
+
+    抽成纯函数是为了让「命中 0」那一格有夹具可咬（内联在 build() 里就只能在几十分钟的真跑里看）。
+    """
+    moved = [ch for ch in channels if group_overridden(ch["name"])]
+    missing = sorted(set(CHANNEL_GROUP_OVERRIDE) - {norm_key(ch["name"]) for ch in moved})
+    return moved, missing
+
+
+def check_group_override():
+    """覆盖表自检：目标 (category, subgroup) 必须是声明过的真实分组。"""
+    for name, spec in CHANNEL_GROUP_OVERRIDE.items():
+        cat, sub = spec["category"], spec["subgroup"]
+        if sub not in SUBGROUP_ORDER.get(cat, []):
+            raise SystemExit(
+                f"[拒绝] 整台换组 {name}→{cat}/{sub}：这个组没在 SUBGROUP_ORDER 里声明，"
+                f"落盘后首页看不见这台。要么补声明，要么改目标组。")
+        print(f"[换组] {name} → {cat}/{sub}（id 会按新组重算；{spec['why']}）")
+
 
 # 这几组的 order 是频道号（CCTV-1…、卫视、体育的点名次序），长辈靠它找台，
 # 所以不参与「可用线路优先」的重排；其余各组按可用性提序。
@@ -905,7 +1002,11 @@ class Builder:
         display = unicodedata.normalize("NFKC", str(display or "")).strip()
         if not display:
             return
-        key = (category, subgroup, norm_key(key_name or display))
+        name_key = norm_key(key_name or display)
+        override = CHANNEL_GROUP_OVERRIDE.get(name_key)
+        if override:
+            category, subgroup = override["category"], override["subgroup"]
+        key = (category, subgroup, name_key)
         ch = self.channels.get(key)
         if ch is None:
             ch = {
@@ -1144,11 +1245,35 @@ def res_first_key(name):
     用户 10-25 的原话是「线路按清晰度由高到低排序」，这里比字面软一点点：
     实测连不上/解不开的线不许因为像素多就顶到第 1 条——那正是他一直在说的「正在连接」。
     慢线（`slow_penalty`）只在同一清晰度档内往后排，不跨档。
+
+    用户 10-28 在 AGENTS.md 补的第二句「相同清晰度**抖动小的排前**」就落在 `jitter_key` 那一格上。
     """
     def key(url):
         ev = evidence(url, name)
-        return (1 if ev[0] >= 4 else 0, -resolution_rank(url), slow_penalty(url, name), ev[0], ev)
+        return (1 if ev[0] >= 4 else 0, -resolution_rank(url), *jitter_key(url),
+                slow_penalty(url, name), ev[0], ev)
     return key
+
+
+# 实测余量（同一时间窗内 12 轮交替采样、每次取倒数第二片、用该片 EXTINF 算内容码率，记「下载/码率」）。
+# 只收真跑过的那几条；**没测过的线不进这张表**，也不许拿猜测补位。
+LINE_JITTER = {
+    # 东方卫视：10-28 13:11–13:14 交替采样（tools/.cache/jitter_20261028.json）
+    "http://36.110.54.118:866/hls/28/index.m3u8": {"median": 1.17, "min": 0.68, "rounds": 12},
+    "http://27.129.145.110:4433/hls/40/index.m3u8": {"median": 2.10, "min": 0.89, "rounds": 12},
+}
+
+
+def jitter_key(url):
+    """同清晰度档内的次序：实测过且过 1.2 倍闸的排最前，没测过的居中，实测贴着/低于码率的沉底。
+
+    为什么要把「没测过」单列一档：折进任何一边都会骗人——折到前面等于拿未知当合格，
+    折到后面等于拿未知当坏线。这一格只排**同清晰度**内的次序，跨档仍由 `resolution_rank` 说了算。
+    """
+    j = LINE_JITTER.get(stream_rules.canon(url))
+    if not j:
+        return (1, 0.0)
+    return (0, -j["median"]) if j["median"] >= 1.2 else (2, -j["median"])
 
 
 def remount_by_logo(channels, moves):
@@ -1173,8 +1298,15 @@ def remount_by_logo(channels, moves):
             print(f"[拒绝] 改挂 {src}→{dst}：目录里现读没有这个台名，跳过 {canon}")
             continue
         if ch_src.get("subgroup") != "卫视" or ch_dst.get("subgroup") != "卫视":
-            print(f"[拒绝] 改挂 {src}→{dst}：不是卫视组内部，跳过 {canon}")
-            continue
+            # 默认仍只允许卫视组内互挂（②那条硬规矩不变）。要跨组得在清单里**逐条显式**写
+            # `"cross_group": true`——第一枚是用户 10-27 指令「东方卫视 线1，移到 地方频道」：
+            # 那条线画面左上角是「新纪实 LIVE24」、清单 6/6 分片都是 /material/<存档日期>/ 存好的素材，
+            # 既不是东方卫视此刻的节目、地方组里又没有现成落点（现读 local 159 台 0 命中），
+            # 所以只能新建一台「新纪实」再跨组搬过去。放行条件写成"清单点名了才放行"，不许从台名字典猜。
+            if not spec.get("cross_group"):
+                print(f"[拒绝] 改挂 {src}→{dst}：不是卫视组内部（跨组要在清单里显式写 cross_group），跳过 {canon}")
+                continue
+            print(f"[logo_move] 跨组改挂被允许：{src}→{dst}（清单显式 cross_group，用户 10-27 指令）")
         hit = next((s for s in ch_src["streams"] if stream_rules.canon(s) == canon), None)
         if not hit:
             print(f"[拒绝] {src} 名下现读没有这条地址，跳过 {canon}")
@@ -1231,7 +1363,7 @@ def drop_sd_lines(channels):
         keep, sd = [], []
         for url in row["streams"]:
             raw = STREAM_RAW.get(stream_rules.canon(url), "")
-            (sd if is_sd_line(url, raw) else keep).append(url)
+            (sd if is_sd_line(url, raw, manual=url in MANUAL_LINES) else keep).append(url)
         if sd and not keep and row["name"] in REQUIRED_CHANNELS:
             print(f"[definition][必留豁免] {row['name']} 全部 {len(sd)} 条都判标清 ⇒ 整台原样保留"
                   f"（这台在必留名单里，不许被摘空）")
@@ -1866,6 +1998,11 @@ MANUAL_EXTRA = [
     ("甘肃卫视", "cctv", "卫视", "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=gswshd"),
     ("青海卫视", "cctv", "卫视", "http://107.150.60.122/live/qhws.m3u8"),
     ("宁夏卫视", "cctv", "卫视", "http://107.150.60.122/live/nxws.m3u8"),
+    # 2026-10-27 用户指令「东方卫视 线1，移到 地方频道」：这条 bestv 素材回放的画面左上角是
+    # 「新纪实 LIVE24」（SMG 纪实），台名照画面写，不照用户口述写（同 10-22「风云足球」那次规矩）。
+    # 地方组里当时没有任何纪实/人文台（现读 local 159 台 0 命中）⇒ 只能新建这一台当落点，
+    # 再由 `tools/wshi_logo_moves.json` 那条 cross_group 的改挂把它从东方卫视名下搬进来。
+    ("新纪实", "local", "上海", "http://bp-resource-dfl.bestv.cn/155/3/video.m3u8"),
 ]
 
 # 用户 2026-10-22 点名要补的省市体育频道，只收抽帧认过台标的那一条：
@@ -2111,14 +2248,33 @@ def load_wshi_moves(path):
         if not frm or not to:
             print(f"[warn] 改挂 {canon} 缺 from/to，跳过")
             continue
-        out[canon] = {"from": frm, "to": to, "evidence": row.get("evidence") or ""}
+        out[canon] = {"from": frm, "to": to, "evidence": row.get("evidence") or "",
+                      # 严格解析：`bool("false")` 是 True，手写清单里 `"cross_group": "false"`
+                      # 会被读成"允许跨组"⇒ 只认 1/true/yes 三种写法，其余一律按不允许。
+                      "cross_group": str(row.get("cross_group")).strip().lower() in ("1", "true", "yes")}
     return out
 
 
-def load_cctv3(path):
-    """读央视·卫视三轮回测的删除清单（tools/.cache/cctv3/summary.json）：canonical url -> 理由。
+CCTV3_KIND_LABEL = {
+    "logo": "三轮都无台标（程序＋人工复核）",
+    "no_frame": "三轮都没帧且无台标实证",
+    # 用户 10-26 真机点档：这一页是源站拿来顶位的告警画面，出现过就把这条线摘掉并拉黑。
+    "overload_qr": "服务器超负载…微信扫码告警页（任一轮命中，用户 10-26 指令删）",
+    # 用户 10-27 点档甲：302 到一枚定长片子（不是清单、不是分片流），电视上"出了画"放的是那支片子。
+    # 每一枚都是**逐条重放**抓到的（`tools/.cache/proxy_8138_gate_replay.json`），不是按主机连坐。
+    "finite_clip_placeholder": "定长片占位（302 落地是一枚放得完的 mp4，用户 10-27 判为标签页、无台标）",
+    # 用户 10-27 指认：东方卫视 线1 画面有本台台标、清单也是滑动的直播窗口（无 ENDLIST、MEDIA-SEQUENCE 在走），
+    # 但分片全来自 `/material/<32位hash>/<存档日期>/video/<素材id>-NNNNN.ts` 这种**存好的素材**（那条日期是 2025/0107），
+    # 所以它放的不是本台此刻的节目——台标尺与「有没有直播窗口」两把尺都抓不到它。证据见逐条现取的清单原文。
+    "stale_material_replay": "非实时素材回放（滑动窗口但分片是 /material/<存档日期>/ 存好的素材，带本台台标却不是本台此刻节目，用户 10-27 指认）",
+}
 
-    只收 summary 里 cut 那几条；每条都带着轮次、程序复核分数与人工复核结论（见同一份文件）。
+
+def load_cctv3(path):
+    """读央视·卫视三轮回测的删除清单（final_deletions.json）：canonical url -> 理由。
+
+    只收清单里 cut 那几条；每条都带着轮次、程序复核分数与人工复核结论（见同一份目录）。
+    kind 决定理由文案，未知 kind 不收（宁可少删一条，不许把「说不清来路」的行当成删除凭据）。
     """
     if not path or not Path(path).exists():
         return {}
@@ -2129,7 +2285,10 @@ def load_cctv3(path):
         if not canon:
             continue
         kind = row.get("kind") or "logo"
-        label = "三轮都无台标（程序＋人工复核）" if kind == "logo" else "三轮都没帧且无台标实证"
+        label = CCTV3_KIND_LABEL.get(kind)
+        if label is None:
+            print(f"[warn] --cctv3 里有一条不认识的 kind={kind!r}，这条不收：{canon}")
+            continue
         out[canon] = label
     return out
 
@@ -2229,6 +2388,38 @@ def move_slow_lines_back(channels, health, is_device_played):
     return channels, moved
 
 
+def apply_demotions(channels, specs=None):
+    """用户 10-26 点档「乙」：真死的首条线挪到台内末位——只换序，不删线、不进黑名单。
+
+    名册 `tools/demote_lines.json` 由人工写：每条都带「三轮回测三轮 0 帧＋35 秒长窗 0 帧」的证据。
+    构建侧只做搬运，不重新判定，也不替名册兜底：
+      ①台名对不上、地址不在本台线路里 ⇒ 只报 `[check] demote`，跳过，不猜别的台；
+      ②已经在末位的不动（名册只记真要挪的那批）；
+      ③其余线路的相对次序原样保留（不许顺手再排一次）。
+    位置放在 `move_slow_lines_back` 之后、目录组装之前：这是最后一步，前面的清晰度/证据排序不再覆盖它。
+    """
+    if specs is None:
+        specs = json.loads(DEMOTE_FILE.read_text(encoding="utf-8")).get("lines") or []
+    by_name = {row["name"]: row for row in channels}
+    moved, missing = [], []
+    for spec in specs:
+        name, url = spec.get("channel"), spec.get("url")
+        row = by_name.get(name)
+        if row is None:
+            missing.append(f"{name}（台不在目录）")
+            continue
+        canon = stream_rules.canon(url)
+        hit = next((s for s in row["streams"] if stream_rules.canon(s) == canon), None)
+        if hit is None:
+            missing.append(f"{name}（地址不在本台线路里）")
+            continue
+        if row["streams"][-1] == hit:
+            continue
+        row["streams"] = [s for s in row["streams"] if s is not hit] + [hit]
+        moved.append((name, canon, len(row["streams"])))
+    return moved, missing
+
+
 def strict_filter(channels):
     """删台/删线判据（用户 10-22 23:4x「此为最新判据」＋10-23 17:5x 卫视组删线指令）。
 
@@ -2238,16 +2429,17 @@ def strict_filter(channels):
         不许它悄悄消失，也不许拿播不出来的线冒充可用（那种台要去公开源补线）。
         "已实证"按**累计**证据算（旧场次的抽帧/台标复核＋**设备实测播过**同样算实证），
         本轮没复核到只报数、不删线。
-      ②卫视组（用户 10-23 17:5x「很多频道有多个不可用线路，已验证过的可用线路保留，
-        不可用线路删除」＋18:5x「曾经出过真实画面的有台标的线路就留」）：整台没有一条有画面的线
+      ②卫视组＋地方/国际/港澳台三组（用户 10-23 17:5x「很多频道有多个不可用线路，已验证过的可用线路保留，
+        不可用线路删除」＋18:5x「曾经出过真实画面的有台标的线路就留」＋**10-27 点档
+        「3 从卫视组扩到地方/国际/港澳台」**，作用域见 `TIER3_PRUNE_CATS`）：整台没有一条有画面的线
         ⇒ 删除频道；活下来的台，台内**本机连不通**（档 3：连接超时/响应超时）的线路删掉——
         本机就是父母家那张网（10-23 网络口径），连不通的线只会让电视白等换线超时。
         保留档 0/1（抽帧认过台标／取到过分片）＋档 2（没测过，可能通）＋设备实测播过的线
         （「已播过的线路绝不自动换线」）＋**曾经出过真实画面的线**（has_picture：旧场次抽到过
         正常节目帧也算——天津 222.169.85.8、河南 111.59.139.82 就是这一类，现在连不通也留）。
         这一侧同样不吃设备实测那一档当**台级**证据。
-      ③其余各组（地方/港澳台/特色/体育/国际）：整台找不到一条有画面的线 ⇒ 删除频道；
-        活下来的台，台内线路**一条都不动**（用户只说删台，没说删线）。
+      ③其余各组（央视名册与体育）：整台找不到一条有画面的线 ⇒ 删除频道；
+        活下来的台，台内线路**一条都不动**（10-27 扩档只点到地方/国际/港澳台，没点央视与体育）。
       ④特色频道整组删除（用户 10-23 20:0x「删除特色频道」）：category 是 featured 的台
         不管有没有画面实证一律不进目录——影视轮播/NewTV/CHC/少儿那几台是用户点名不要的，
         与「没有可用源」不是一回事，计数单独一格（dropped_featured），不许并进 dropped_no_source。
@@ -2256,10 +2448,16 @@ def strict_filter(channels):
         验过就留着台，单独计数 `logo_only_kept`。只管**台在不在**：`has_picture` / `has_picture_now`
         一行没动，这种台照样出现在报告的「没有可用画面」名单里（G2/G4 照旧判红），
         也不会替必看台那一侧说话——①没有放宽。
+      ⑥台级那一格再多一条豁免（用户 10-27 #149 点档「甲」＝钉回）：名册 `demote_lines.json` 里
+        `pin: true` 的那条地址，整台一条画面实证都没有时**台留着**，单独计数 `pin_kept`。
+        与⑤同一处置口径——只管台在不在，`has_picture`/`has_picture_now` 一行没动，报告侧照旧判红。
+        线那一侧由 `pin_rescues()` 守在 `usable()` 与②那一格的删除前面：只挡**按 health 判词**
+        发起的删除（对端这一轮回的坏判词、以及②那一格的「本机连不通」），冻帧/告警页/三轮回测
+        定案/容器不支持/占位页/台标是别的台 都钉不动（那几类是指纹级稳定坏）。
     """
     stats = {"must_total": len(MUST_PLAY_CHANNELS), "pruned_lines": 0,
              "must_no_picture": [], "dropped_no_source": 0, "dropped_featured": 0,
-             "stale_only": [], "sat_pruned": [], "logo_only_kept": []}
+             "stale_only": [], "tier3_pruned": [], "logo_only_kept": [], "pin_kept": []}
     survivors = []
     for ch in channels:
         if ch["category"] == "featured":
@@ -2277,17 +2475,24 @@ def strict_filter(channels):
                 stats["must_no_picture"].append(ch["name"])
             survivors.append(ch)
         elif proven:
-            if ch["subgroup"] == "卫视":
+            # 「整台换组」不许顺手改线路集：这台的剪枝规则按它**离开的那个组**算。
+            # 10-27 试算现读：只把 subgroup 从 卫视 改成 local/山东 时，
+            # `39.135.138.58:18890/.../3221225719/index.m3u8`（在库黑名单理由「连接超时」）
+            # 因为不再是"卫视组"就绕过了这条剪枝 ⇒ 目录 472→473 条、黑名单 1561→1560，
+            # 一条已判坏的线被换组这件事放了回来。用户指令只有"频道页放地方频道"，没有"把这条放回来"，
+            # 所以按台名（在 卫视 名册 SAT_ORDER 里）继续适用原组规则。
+            if (ch["subgroup"] == "卫视" or ch["category"] in TIER3_PRUNE_CATS
+                    or (group_overridden(ch["name"]) and ch["name"] in SAT_ORDER)):
                 kept, dropped = [], []
                 for s in ch["streams"]:
                     if (evidence(s, ch["name"])[0] < 3 or device_proof(ch["name"], s)
-                            or has_picture(ch["name"], s)):
+                            or has_picture(ch["name"], s) or pin_rescues(ch["name"], s)):
                         kept.append(s)
                     else:
                         dropped.append(s)
                 if kept and dropped:
                     ch["streams"] = kept
-                    stats["sat_pruned"].extend(
+                    stats["tier3_pruned"].extend(
                         (ch["name"], stream_rules.canon(s),
                          (HEALTH.get(stream_rules.canon(s)) or {}).get("verdict", ""))
                         for s in dropped)
@@ -2299,6 +2504,12 @@ def strict_filter(channels):
             # 所以它照样进 G2/G4 的「没有可用画面」名单、报告侧照旧判红——是"台别消失"，不是"台算能用"。
             stats["logo_only_kept"].append(ch["name"])
             survivors.append(ch)
+        elif any(pin_rescues(ch["name"], s) for s in ch["streams"]):
+            # 「钉回目录」（用户 10-27 #149 点档「甲」＝上面第 ⑥ 格）：整台一条画面实证都没有，
+            # 但名册里有一条地址是用户点名要留的 ⇒ 台留着。与⑤同一类处置——只管台在不在，
+            # `has_picture`/`has_picture_now` 一行没动，这台照样进 G2/G4 的「没有可用画面」名单。
+            stats["pin_kept"].append(ch["name"])
+            survivors.append(ch)
         else:
             stats["dropped_no_source"] += 1
     return survivors, stats
@@ -2307,7 +2518,10 @@ def strict_filter(channels):
 def build(args):
     global MAX_STREAMS, HEALTH, IDENTITY, DROP_DEAD, DROP_SD, FRAME_RES, FRAME_PLACEHOLDER, FRESH_RES, DEVICE_PROOF
     global FRAME_STALLED, FROZEN, FROZEN_NO_SIBLING, REVIEW_LOGO, AMBIGUOUS_LOGO, REVIEW_PICTURE
-    global RETEST, RETEST_CUT, CCTV3_CUT
+    global RETEST, RETEST_CUT, CCTV3_CUT, PINNED
+    check_group_override()
+    # 「钉回目录」的名册要在第一条线路被判之前就位：usable() 与台级那一格都读这一格。
+    PINNED = pin_specs() if DEMOTE_FILE.exists() else set()
     MAX_STREAMS = max(0, int(args.max_streams))
     DROP_DEAD = not args.keep_dead
     DROP_SD = not args.keep_sd
@@ -2338,12 +2552,22 @@ def build(args):
         print(f"[retest] {RETEST.get('__rounds__', '')}"
               f"{len(RETEST)} 条地址的回测汇总：三轮都不通且没有本台台标的 {len(RETEST_CUT)} 条"
               f"（有台标的按「保留有台标的线路」留着）")
-    CCTV3_CUT = load_cctv3(args.cctv3) if args.cctv3 else {}
+    CCTV3_CUT = {}
+    for _p in (args.cctv3 or []):
+        CCTV3_CUT.update(load_cctv3(_p))
     if CCTV3_CUT:
-        # 与 [retest] 那两把尺分开报：这一把只回答「三轮都没看到本台台标」，
-        # 判据是画面（程序复核＋人工复核），不是连通性。
-        print(f"[cctv3] {len(CCTV3_CUT)} 条央视·卫视线路：三轮都无本台台标，或三轮都没帧且无台标实证"
-              f"（删线＋拉黑，设备端自动更新捞不回来）")
+        # 与 [retest] 那两把尺分开报：这一把判的是画面（程序复核＋人工复核），不是连通性。
+        # 分档按理由现算：旧那行只分"扫码页 / 其余"两桶，加进"定长片占位"这一族后它把
+        # 13 条占位片一起写成"三轮都无本台台标或三轮都没帧"＝分项之和≠总数那个老形状（10-27 现读）。
+        _by = {}
+        for _v in CCTV3_CUT.values():
+            _k = _v.split("（")[0]
+            _by[_k] = _by.get(_k, 0) + 1
+        print(f"[cctv3] {len(args.cctv3 or [])} 份清单合并后 {len(CCTV3_CUT)} 条央视·卫视线路"
+              f"（删线＋拉黑，设备端自动更新捞不回来）："
+              + "，".join(f"{k} {v} 条" for k, v in sorted(_by.items(), key=lambda kv: -kv[1]))
+              + f"｜分项之和 {sum(_by.values())} == {len(CCTV3_CUT)}"
+              + (" ✓" if sum(_by.values()) == len(CCTV3_CUT) else " ✗"))
     frame_paths = list(dict.fromkeys([DEFAULT_FRAMES] + [Path(p) for p in (args.frames or [])]))
     FRAME_RES, FRAME_PLACEHOLDER, FRAME_STALLED = {}, {}, {}
     for path in frame_paths:
@@ -2709,6 +2933,200 @@ def build(args):
     #   dsdqpub 的 cctv5p/cctv4k 就是这样被挡掉的。
     #   仍只有 2 条：CCTV-5+（没有第三条可用源）、CCTV-4K（两条都在 38.75.136.137 同一台主机）。
     manual_backups = {
+        # 用户 10-28「资产统一」：设备目录上有、打进 APK 的目录里没有的线，按标准过了一遍，
+        # 下面 6 条是 15:1x 现测通过（下载/码率 7.71–18.44、1280×720 或 1920×1080、
+        # 抽帧在画面上认到本台台标）才补进来的，只追加、不动首条。
+        # 证据：tools/.cache/unify_alive_probe.json ＋ tools/.cache/unify_frames/（拼图 unify_sheet.jpg）。
+        # 未收的：苏州4K（抽到的是「4K频道」＝CCTV-4K，台名不符）、CGTN阿语（地址实为西语台）、
+        # 东方卫视4K（与已有 https 线同源）、萧山生活频道/乐至综合频道（与已收那条重名同址）。
+        "怀仁综合频道": [
+            # 10.53×；1920×1080；左上「RTV 怀仁」
+            "https://1yp7hc5p.live.sxmty.com/live/hls/bff8529922344209985b6e49baa9555a/efa2543628fc4a7ea93d3d6c975f77dc-1.m3u8",
+        ],
+        "诸暨新闻综合": [
+            # 9.85×；1920×1080；左上蓝圈「新闻综合」
+            "http://l.cztvcloud.com/channels/lantian/SXzhuji3/720p.m3u8?zzhed",
+        ],
+        "文成综合": [
+            # 18.44×；1280×720；左上「文成综合」
+            "http://l.cztvcloud.com/channels/lantian/SXwencheng1/720p.m3u8",
+        ],
+        "萧山生活": [
+            # 14.50×；1280×720；左上「萧山电视台」
+            "http://l.cztvcloud.com/channels/lantian/SXxiaoshan2/720p.m3u8",
+        ],
+        "广州综合": [
+            # 7.71×；1280×720；左上「广州广播电视台」
+            "http://tencentplay.gztv.com/live/zonghes.m3u8?txSecret=c8dbe86d6f86eb1a21999ab479fd5667&txTime=18d3c4690e8",
+        ],
+        "金川新闻综合": [
+            # 10.43×；1920×1080；左上「JCTV」
+            "http://live.jinchuanrmt.com:90/live/zhxw.m3u8?zsicd",
+        ],
+        "余杭未来E": [
+            # 12.75×；1920×1080；左上「YMG 未来E频道」
+            "http://l.cztvcloud.com/channels/lantian/SXyuhang3/720p.m3u8",
+        ],
+        "CGTN 西语": [
+            # 7.55×；1920×1080；左上「CGTN ESPAÑOL」
+            "http://espanol-liveali.cgtn.com/hls/LSveOGBaBw41Ea7ukkVAUdKQ220802LSTexu6xAuFH8VZNBLE1ZNEa220802cd.m3u8",
+        ],
+        "邢台综合": [
+            # 2.2×；1280×720；左上蓝圈「新闻综合」
+            "http://jwplay.hebyun.com.cn/live/xtsrmtzs/1500k/tzwj_video.m3u8",
+        ],
+        "缙云综合": [
+            # 17.0×；1280×720；左上蓝圈「新闻综合」
+            "http://l.cztvcloud.com/channels/lantian/SXjinyun1/720p.m3u8",
+        ],
+        "吉林卫视": [
+            # 2.27×；1920×1080；左上「吉林卫视」（画面带补肺丸广告，按用户标准"有台标+广告=有台标"）
+            "http://221.7.175.154:8445/tsfile/live/1014_1.m3u8?key=txiptv&playlive=1&authid=0",
+        ],
+        "怀仁综合": [
+            # 单片清单；1920×1080；左上「RTV 怀仁」（两个写法同一份流，设备上都有，代码侧同批收齐）
+            "http://1yp7hc5p.live.sxmty.com/live/hls/bff8529922344209985b6e49baa9555a/efa2543628fc4a7ea93d3d6c975f77dc-1.m3u8",
+            "http://1yp7hc5p.live.sxmty.com/live/hls/bff8529922344209985b6e49baa9555a/efa2543628fc4a7ea93d3d6c975f77dc.m3u8",
+        ],
+        "乐至综合": [
+            # 5.43×；1920×1080；左上「综合」＋右上「高清」
+            "http://175.155.106.72:89/live1/live1.m3u8",
+        ],
+        # 用户 10-28「央视·卫视 继续找 vbsky/aptv 等列表，增加 MP2 高清线的替代源，需符合线路标准要求；加进各自台」：
+        # 下面 6 条都过了「三轮回测 吞吐/码率」＋「ffprobe 分辨率」＋「台标」三关，**追加**在原线之后（不动首条）。
+        # 三轮回测读数见 tools/.cache/mp2_alt_ratios{,2,3}.json；台标帧见 tools/.cache/mp2_alt/。
+        # 用户 10-28 03:0x「复活两源 浙江 黑龙江」：这两条曾被 #86 乙 拉黑（「白天重扫仍判冻＋带二维码
+        # 购物广告」／「解不出画面」），今天三轮回测都通（16/14/16×、7/5/7.6×，1080p，台标已认），
+        # 按指令复活，并同批从 blockedLines 摘掉（目录里已摘，黑名单 1583→1581）。
+        "浙江卫视": [
+            # 三轮回测 16.07 / 14.20 / 16.14；1920×1080；有台标 0.738（左上「浙江卫视」＋「中国蓝新闻」）
+            "https://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8",
+        ],
+        "黑龙江卫视": [
+            # 三轮回测 6.97 / 5.01 / 7.62；1920×1080；有台标 0.61（官方 idclive）
+            "https://idclive.hljtv.com:4430/live/hljws_own.m3u8",
+        ],
+        "东方卫视": [
+            # 2.32 / 2.82 / 2.86；1920×1080；有台标 0.527（星标＋《危险关系》）
+            "http://27.129.145.110:4433/hls/40/index.m3u8",
+        ],
+        # 10-28 20:2x：36.110 那台实测只给 4.4–5.9 Mbps（四种 UA 都一样），而内容是 8.0 Mbps，
+        # 电视上就是「只有声音没画面」。同一批频道在 61.138.82.196:808 上有快源，逐帧认过台标：
+        #   n26 = 东方卫视（左上红色「东方」书法标）、n24 = 山东卫视、n6 = CCTV-6（「CCTV 6 电影」）。
+        # 实测（需要 8.0）：n26 20.1/14.4、n24 18.2/20.6、n6 21.4/10.2 Mbps，1920×1080 非标清。
+        # 10-28 20:5x 用户指令：「分析 61.138.82.196:808/hls 的线路规则，1 到 100，把正常的线路按规则加到对应频道」。
+        # 现读：该主机只有 1–40 号（41–100 全 404）；逐号抽帧认台标，且**只有 1080p 的号才收**（n20/27/28/31/36/38/39/40 是 720×576 标清，按标准不收）。
+        # 索引↔频道：1-15=CCTV-1..15、16 浙江、17 江苏、18 湖北、19 广东、22 东方（红椭圆白星，与 27.129 那条同标，n26 的“东方”书法标是别的台，已撤）、
+        # 23 辽宁、24 山东、25 吉林、29 安徽、30 北京、32 河北、33 天津、35 四川。
+        # 实测样本（需要 8.0 Mbps）：n6 21.4/10.2、n24 18.2/20.6、n26 20.1/14.4、n30 10.5/24.0 Mbps ⇒ 余量 1.3–2.7 倍。
+        # 全部插在各自第 2 位（首条不动）。
+        "CCTV-1 综合": [
+            "http://61.138.82.196:808/hls/1/index.m3u8",
+        ],
+        "CCTV-2 财经": [
+            "http://61.138.82.196:808/hls/2/index.m3u8",
+        ],
+        "CCTV-3 综艺": [
+            "http://61.138.82.196:808/hls/3/index.m3u8",
+        ],
+        "CCTV-4 中文国际": [
+            "http://61.138.82.196:808/hls/4/index.m3u8",
+        ],
+        "CCTV-5 体育": [
+            "http://61.138.82.196:808/hls/5/index.m3u8",
+        ],
+        "CCTV-6 电影": [
+            "http://61.138.82.196:808/hls/6/index.m3u8",
+        ],
+        "CCTV-7 国防军事": [
+            "http://61.138.82.196:808/hls/7/index.m3u8",
+        ],
+        "CCTV-8 电视剧": [
+            "http://61.138.82.196:808/hls/8/index.m3u8",
+        ],
+        "CCTV-9 纪录": [
+            "http://61.138.82.196:808/hls/9/index.m3u8",
+        ],
+        "CCTV-10 科教": [
+            "http://61.138.82.196:808/hls/10/index.m3u8",
+        ],
+        "CCTV-11 戏曲": [
+            "http://61.138.82.196:808/hls/11/index.m3u8",
+        ],
+        "CCTV-12 社会与法": [
+            "http://61.138.82.196:808/hls/12/index.m3u8",
+        ],
+        "CCTV-13 新闻": [
+            "http://61.138.82.196:808/hls/13/index.m3u8",
+        ],
+        "CCTV-14 少儿": [
+            "http://61.138.82.196:808/hls/14/index.m3u8",
+        ],
+        "CCTV-15 音乐": [
+            "http://61.138.82.196:808/hls/15/index.m3u8",
+        ],
+        "浙江卫视": [
+            "http://61.138.82.196:808/hls/16/index.m3u8",
+        ],
+        "江苏卫视": [
+            "http://61.138.82.196:808/hls/17/index.m3u8",
+        ],
+        "湖北卫视": [
+            "http://61.138.82.196:808/hls/18/index.m3u8",
+        ],
+        "广东卫视": [
+            "http://61.138.82.196:808/hls/19/index.m3u8",
+        ],
+        "东方卫视": [
+            "http://61.138.82.196:808/hls/22/index.m3u8",
+        ],
+        "辽宁卫视": [
+            "http://61.138.82.196:808/hls/23/index.m3u8",
+        ],
+        "山东卫视": [
+            "http://61.138.82.196:808/hls/24/index.m3u8",
+        ],
+        "吉林卫视": [
+            "http://61.138.82.196:808/hls/25/index.m3u8",
+        ],
+        "安徽卫视": [
+            "http://61.138.82.196:808/hls/29/index.m3u8",
+        ],
+        "贵州卫视": [
+            "http://61.138.82.196:808/hls/21/index.m3u8",
+        ],
+        # 用户 10-28 21:1x：n32=河北（目录原无此台，已新建频道）、n37=甘肃。两条都 1080p。
+        "河北卫视": [
+            "http://61.138.82.196:808/hls/32/index.m3u8",
+        ],
+        "甘肃卫视": [
+            "http://61.138.82.196:808/hls/37/index.m3u8",
+        ],
+        # 用户 10-28 21:0x 指认：n26 那个红色书法标是**黑龙江卫视**（我先前判成“别的台”，已按用户改口）。
+        # 实测 n26 需要 8.0 / 交付 20.1、14.4 Mbps。
+        "黑龙江卫视": [
+            "http://61.138.82.196:808/hls/26/index.m3u8",
+        ],
+        "北京卫视": [
+            "http://61.138.82.196:808/hls/30/index.m3u8",
+        ],
+        "河北卫视": [
+            "http://61.138.82.196:808/hls/32/index.m3u8",
+        ],
+        "天津卫视": [
+            "http://61.138.82.196:808/hls/33/index.m3u8",
+        ],
+        "四川卫视": [
+            "http://61.138.82.196:808/hls/35/index.m3u8",
+        ],
+        # 「山东卫视」那条 hznet 线 10-28 12:0x 摘掉：放大门禁帧左上角是 **HZTV（湖州台）**，
+        # 画面是养生讲座＋二维码（「五脏同调祛慢病」），台标与频道名不符 ⇒ 按用户标准判红。
+        # 当时登记写的"肉眼见左上红标"只认了颜色、没读字，是错的判据。
+        # 摘后山东卫视剩 3 条（63.141 / 36.110 / 107.150），标清/高清见各线帧。
+        "深圳卫视": [
+            # 3.19 / 2.14 / 1.06；1920×1080；有台标 0.473（余量薄，且 38.75 这台主机此前有抖动，只当备用）
+            "http://38.75.136.137:98/gslb/dsdqpub/szwshd.m3u8?auth=testpub",
+        ],
         "CCTV-1 综合": [
             "http://38.75.136.137:98/gslb/dsdqbv/cctv1hd.m3u8?auth=test20251009",
             "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv1hd",
@@ -2763,6 +3181,9 @@ def build(args):
         ],
         "CCTV-6 电影": [
             "http://38.75.136.137:98/gslb/dsdqbv/cctv6hd.m3u8?auth=test20251009",
+            # 用户 10-28「加进各自台」：三轮回测 3.92 / 2.57 / 2.77；1920×1080；台标 0.542。
+            # ⚠️来源是 douyin 第三方中继，长期可用性未证，只当备用。
+            "https://cdn.ttvb.eu.org/douyin/cctv6cinema",
             "http://63.141.230.178:82/gslb/zbdq5.m3u8?id=cctv6hd",
             # 用户 10-24 目标「增加央视频道的可用线路」第三批：150 秒长窗确认画面正常推进，04:04 逐张看 2×2 放大格认过台标（tools/.cache/b3_sel.json）。
             "http://192.151.150.154/live/cctv6hd.m3u8",
@@ -3008,10 +3429,25 @@ def build(args):
         )),
     ):
         manual_backups.setdefault(_name, []).extend(_urls)
+    # 用户 10-25 新源（gitee/gly358617629、homjanon/tv、jisoypub/iptv）：
+    # 候选先 health_probe 取到分片，再 VLC 原生抽帧，logo_check 对本台模板 ≥0.45 且目视相符；
+    # 只收 .m3u8、且原生宽不超过该台现有第一条——追加在末尾，不动已播过／已验证的第一条。
+    # 数据与逐条分数见 tools/new_source_backups_20261025.json（随仓库走，不依赖 .cache）。
+    newsrc_path = BASE / "tools/new_source_backups_20261025.json"
+    if newsrc_path.exists():
+        newsrc = json.loads(newsrc_path.read_text(encoding="utf-8"))
+        n_newsrc = 0
+        for _name, _rows in (newsrc.get("channels") or {}).items():
+            _urls = [r.get("url") for r in _rows if r.get("url")]
+            if _urls:
+                manual_backups.setdefault(_name, []).extend(_urls)
+                n_newsrc += len(_urls)
+        print(f"[newsrc] 新源备份线 {n_newsrc} 条（取分片＋原生抽帧＋台标程序复核 ≥0.45，只追加不换首条）")
     for ch in channels:
         backups = manual_backups.get(ch["name"])
         if backups:
             ch["streams"] = list(dict.fromkeys(list(ch["streams"]) + backups))
+            MANUAL_LINES.update(backups)
     # 卫视备份线（用户 10-23 18:5x「卫视加备份线路，曾经出过真实画面的有台标的线路就留」）：
     # 与 manual_backups 同一追加语义——现有第一条是验证过的（或设备播过的），不被新线挤掉。
     # 10-23 19:0x 那批：三台已验证主机（63.141 zbdq5／107.150 live／38.75 dsdqpub）逐台探测＋
@@ -3060,6 +3496,7 @@ def build(args):
         backups = sat_manual_backups.get(ch["name"])
         if backups:
             ch["streams"] = list(dict.fromkeys(list(ch["streams"]) + backups))
+            MANUAL_LINES.update(backups)
 
     # 台标证据的归属：`review.json` 那一份只按地址记结论（老行没有台名字段），
     # 所以先按「这条地址挂在几个台名下」算出歧义集，歧义的那批不许借证（见 logo_verified）。
@@ -3122,6 +3559,17 @@ def build(args):
     # 「待验证」分组从这一版起不再产生：以前是"没画面也留在目录里挪个组"，新判据是直接删。
     survivors, strict_stats = strict_filter(channels)
     channels = survivors
+    # 换组这一档的「名单数 vs 真落进目录的台数」两个数都要打：只报前者时，源里没这台、
+    # 或被删台规则整台摘掉，都会伪装成"换组已生效"（命中 0 = 只有名单在守，没有真产物）。
+    moved, missing = group_move_coverage(channels)
+    for ch in moved:
+        print(f"[换组] 目录现读 {ch['name']} -> {ch['category']}/{ch['subgroup']}"
+              f" id={ch['id']} 线路 {len(ch['streams'])} 条"
+              + ("（剪枝仍按它离开的 卫视 组算，线路集不换）" if ch["name"] in SAT_ORDER else
+                 "（不在 卫视 名册 ⇒ 没有原组剪枝规则跟着走）"))
+    if missing:
+        print(f"[换组][警告] 名单 {len(CHANNEL_GROUP_OVERRIDE)} 台、目录里只落了 {len(moved)} 台："
+              f"{'、'.join(missing)} 没进目录（源里没有这台，或被删台规则整台摘掉）")
     # 尺寸这一份按最后存下来的那些线算（strict_filter 还会摘一批），报数才和目录里的条数自洽。
     line_quality = line_quality_map(channels)
     print(f"[resolution] 随目录打进 APK 的每条线尺寸 {len(line_quality)} 条"
@@ -3133,15 +3581,27 @@ def build(args):
         # 只报数、不删线：用户 10-22 23:5x「已实证有画面的线路不删除」——旧场次的实证照样算实证。
         print(f"[strict] 其中 {len(strict_stats['stale_only'])} 台靠的是旧场次的画面实证（本轮没复核到），"
               f"要靠模拟器截图定音：{('、'.join(strict_stats['stale_only']))}")
-    sat_names = sorted({name for name, _, _ in strict_stats['sat_pruned']})
-    print(f"[strict] 卫视组删掉本机连不通的线 {len(strict_stats['sat_pruned'])} 条（{len(sat_names)} 台），"
-          f"并按地址送进黑名单防设备端更新捞回")
+    tier3_names = sorted({name for name, _, _ in strict_stats['tier3_pruned']})
+    tier3_by_verdict = {}
+    for _, _, verdict in strict_stats['tier3_pruned']:
+        key = verdict or "本机连不通"
+        tier3_by_verdict[key] = tier3_by_verdict.get(key, 0) + 1
+    print(f"[strict] 档 3 删线（作用域＝卫视组＋地方/国际/港澳台，用户 10-27 点档「3」）"
+          f"{len(strict_stats['tier3_pruned'])} 条（{len(tier3_names)} 台；按判词："
+          + "、".join(f"{k} {v}" for k, v in sorted(tier3_by_verdict.items())) + "）"
+          f"，并按地址送进黑名单防设备端更新捞回")
     print(f"[strict] 其余各组无可用源、整台删除 {strict_stats['dropped_no_source']} 台（活下来的台内线路一条没动）")
     logo_only = sorted(strict_stats['logo_only_kept'])
     print(f"[strict] 台级「认台标」那一格救回的台 {len(logo_only)} 台"
           f"（整台没有画面实证、只有本台台标 ⇒ 台留着但报告照旧判红）："
           + ("、".join(logo_only[:12]) + (f"…另 {len(logo_only) - 12} 台" if len(logo_only) > 12 else "")
              if logo_only else "无"))
+    pin_kept = sorted(strict_stats['pin_kept'])
+    print(f"[strict] 台级「钉回目录」那一格救回的台 {len(pin_kept)} 台"
+          f"（名册 tools/demote_lines.json 里 pin 那一格＝用户点档要留，只对端回了坏的这一档；"
+          f"台留着但报告照旧判红）："
+          + ("、".join(pin_kept) if pin_kept else "无")
+          + f"｜名册共钉住 {len(PINNED)} 枚地址")
     print(f"[strict] 特色频道整组删除（用户 10-23 20:0x）{strict_stats['dropped_featured']} 台")
     must_no_picture = strict_stats['must_no_picture']
 
@@ -3153,6 +3613,15 @@ def build(args):
     else:
         print(f"[slow] 甲（用户 10-23 20:5x 点档）：没有要挪的慢线")
 
+    # 用户 10-26 点档「乙」：真死的首条线降序。最后一步，前面的排序不再覆盖它。
+    demoted, demote_missing = apply_demotions(channels)
+    if demoted:
+        print(f"[demote] 乙（用户 10-26 点档）：真死的首条线挪到台内末位 {len(demoted)} 条："
+              + "、".join(f"{n}（本台 {k} 条线中排第 {k}）" for n, _, k in demoted))
+    else:
+        print("[demote] 乙（用户 10-26 点档）：名册里的线都已在末位或未命中")
+    print("[check] demote 名册对不上:", "、".join(demote_missing) if demote_missing else "none")
+
     present = defaultdict(set)
     for ch in channels:
         present[ch["category"]].add(ch["subgroup"])
@@ -3160,7 +3629,9 @@ def build(args):
     categories = []
     for cat in CATEGORY_ORDER:
         subs = [s for s in SUBGROUP_ORDER[cat] if s in present[cat]]
-        if subs:
+        # 腾讯体育组由设备端手动挂的临时线填充，产物里通常是空的；
+        # 分类定义必须留着，否则主页那一列没有这个组、挂上的场次也没有自己的分组。
+        if subs or cat == "tencent":
             categories.append({"id": cat, "name": CATEGORY_NAMES[cat], "subgroups": subs})
 
     # 目录自己留下的线不能同时进黑名单：黑名单是给设备端「别再把它捞回来」用的，
@@ -3170,7 +3641,7 @@ def build(args):
     # 卫视组刚删掉的那批「本机连不通」线：目录里没了，设备端自动更新还会从公开源一遍遍捞回来
     # （10-22 模拟器现读：一次开机后台更新就把缓存写成比内置目录多 561 条线）。
     # 和黑名单同一批交付，键仍排好序（这一份的顺序不许随证据文件的传法变）。
-    for _, canon, verdict in strict_stats['sat_pruned']:
+    for _, canon, verdict in strict_stats['tier3_pruned']:
         if canon:
             blocked[canon] = verdict or "本机连不通"
     # 用户点档的「内容漂移」线：证据还是好证据（可取到分片＋旧复核台标相符），按证据算它不坏，
@@ -3314,9 +3785,12 @@ if __name__ == "__main__":
                          "只有分钟级确认「源没在给新画面」的那一档会删线＋拉黑")
     ap.add_argument("--retest", type=Path, default=None,
                     help="三轮全线路回测的汇总（tools/retest3_summary.py 的 --out 产物）")
-    ap.add_argument("--cctv3", type=Path, default=None,
-                    help="央视·卫视全线路三轮回测的删除清单（tools/.cache/cctv3/summary.json）："
-                         "≥3 轮都无本台台标、或三轮都没帧且无台标实证的线路")
+    ap.add_argument("--cctv3", type=Path, action="append", default=None,
+                    help="央视·卫视全线路三轮回测的删除清单（回测目录里的 final_deletions.json）："
+                         "≥3 轮都无本台台标、三轮都没帧且无台标实证、"
+                         "或任一轮抽出「服务器超负载…微信扫码」告警页的线路。"
+                         "可重复给多份（每批复测一份）：blockedLines 是构建的产物、不回读上一版资产，"
+                         "少传一份就等于把那一批删过的地址放回公开源捞回来的通道里")
     ap.add_argument("--wshi-moves", type=Path, default=BASE / "tools" / "wshi_logo_moves.json",
                     help="卫视「按台标改挂」的人工确认清单（json）：探测器 wshi_mismatch.py 挑出、"
                          "单张角标复核过的地址才写进来。默认那份在 tools/ 下随仓库走，"

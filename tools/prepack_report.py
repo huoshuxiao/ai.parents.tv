@@ -28,6 +28,7 @@ BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "tools"))
 import health_probe  # noqa: E402
 import probe_channels  # noqa: E402
+import review_carry  # noqa: E402
 import stream_rules  # noqa: E402
 import build_catalog  # noqa: E402   # 必看台名单只这一份（MUST_PLAY_CHANNELS）
 
@@ -41,8 +42,16 @@ FRAME_OK_BYTES = 4_000
 # 出帧结论里，只有这两种算「正常画面」；其余（广告、占位页、二维码、别的台）都不许进包。
 GOOD_LOGO = "台标相符"
 GOOD_PICTURE = "正常节目画面"
-# review.json 里没写结论的帧一律按「未查」计，不折成通过。
+# review.json 里没写结论的帧一律按「待人工复核」计，不折成通过。
 PENDING = "待人工复核"
+# 一张帧的四态：门禁（G2/G3）与复核队列都只认这一个函数算出来的结果，不许各写一套。
+# 10-26 用户点档：「只被自动指纹认成占位页、台标那一半从没人写过」的帧算「待人工复核」，
+# 不许算成「画面异常」——没人写过台标结论就不算判过（r58 那 15 张红里就有 2 张是这种情况）。
+STATE_JUDGED = "已判"
+STATE_CARRIED = "沿用"
+STATE_PENDING = PENDING
+STATE_RED = "判红"
+CARRIED_MARK = "（沿用 "
 
 # 已知「不是节目画面」的画面指纹：dHash（8×8 相邻像素梯度，64 位）+ 一句话判词。
 # 用户 2026-10-22 要求「必须排除广告画面」「画面不能有二维码」，全频道口径下几百张帧逐张看不过来，
@@ -83,6 +92,11 @@ FRAME_FINGERPRINTS = (
     # 而冻帧那把尺**看不见它**：这一页会自己刷新，字节一直在变，长窗读的是「画面正常推进」。
     # 咬合余量（11:3x 现量）：离库内最近一枚指纹 21 格、离本轮 20 张「收」的帧最近 18 格，阈值 8 留 10 格。
     (0x2525252527270703, "占位页：源站「服务器超负载…微信扫码支持」告警页（右侧微信收款码，无任何台标）"),
+    # 10-25 21:2x 钉的：用户逐张复核 CCTV-4K 超高清 L02/L06 的 R2 判「左右无台标、是广告」——
+    # 诊室画面（老先生坐诊、药柜）＋上下两行「订购电话：400-689-3979」，左下「麦可通」小标。
+    # 同一支广告在两帧的 dHash 只差 4 格；离库内最近一枚指纹 20 格；离同台 R3 真画面（左上「CCTV 4K」）31 格。
+    # 阈值 8 ⇒ 两帧互相覆盖，与真画面留 23 格。
+    (0x161E1E19D899FD1F, "广告：诊室画面 + 两处「订购电话：400-689-3979」（挂在 CCTV-4K 超高清名下）"),
 )
 FINGERPRINT_MAX_DISTANCE = 8
 # 纯色帧（整帧没有明暗变化：蓝屏／黑屏）。它证明不了这台在播节目，但也不像测试卡那样
@@ -198,6 +212,23 @@ def frame_counts(name: str, line: dict, logo: str, picture: str) -> bool:
     url = line.get("url") or ""
     return bool(card_is_picture(name, line.get("placeholder") or picture, url,
                                 {url: {"logo": logo}}))
+
+
+def frame_state(name: str, line: dict, logo: str, picture: str) -> str:
+    """这一帧的四态：已判／沿用／待人工复核／判红。**只在这里算**（G2/G3 与复核队列共用）。
+
+    待人工复核：台标或画面那一半没人写过。自动指纹只填「画面不是节目内容」那一半，
+    它不算判过——10-26 用户点档，r58 那 2 张「只被指纹认成占位页、台标没人写过」的
+    CCTV-4K·线2／CCTV-8K·线3 从「画面异常」挪到这一档。
+    沿用：review_carry 按 url 跨轮补的结论（台账在 tools/.cache/gate/review_carry.json）。
+    """
+    if logo == PENDING or picture == PENDING:
+        return STATE_PENDING
+    if not (logo.startswith(GOOD_LOGO) and frame_counts(name, line, logo, picture)):
+        return STATE_RED
+    if CARRIED_MARK in logo or CARRIED_MARK in picture:
+        return STATE_CARRIED
+    return STATE_JUDGED
 
 
 def frames_stalled(shots) -> str | None:
@@ -499,12 +530,12 @@ def write_line_frames(path: Path, results: list[dict]) -> None:
 
     只记本次真抽到帧的那几条；没出帧的线路不写尺寸（不拿 0 冒充「标清」）。
     """
-    with path.open("w", encoding="utf-8") as handle:
-        for result in results:
-            for line in result["lines"]:
-                if not line["frame"]:
-                    continue
-                handle.write(json.dumps({
+    rows: list[str] = []
+    for result in results:
+        for line in result["lines"]:
+            if not line["frame"]:
+                continue
+            rows.append(json.dumps({
                     "channel": result["name"], "line_index": line["index"], "url": line["url"],
                     "width": line["width"], "height": line["height"],
                     "bytes": line["bytes"], "frame": str(line["frame"]),
@@ -518,8 +549,42 @@ def write_line_frames(path: Path, results: list[dict]) -> None:
                     # 卡流（抽帧窗口内几帧字节全同）单独一列：它同样只让「有正常画面」不加分，
                     # 不进 placeholder 那一列——卡流是时刻性的，不是这条线永久坏了。
                     "stalled": line.get("stalled", ""),
-                }, ensure_ascii=False) + "\n")
-    log(f"[frames] {path}")
+            }, ensure_ascii=False))
+    write_frame_rows(path, rows)
+
+
+def merge_frame_rows(existing: list[str], rows: list[str]) -> list[str]:
+    """台账里「本轮目录没有的地址」原样留着——#54 那把换底缺陷挡的就是这个。
+
+    本轮同一个 url 的新读数顶掉旧行；读不懂的行（不是 json）保留下来等人工看，不悄悄扔。
+    证据文件按「累加」算，不按「本轮跑过哪些」算：字段缺失不等于这条地址的意见是干净的。
+    """
+    fresh_urls = set()
+    for row in rows:
+        try:
+            fresh_urls.add(json.loads(row)["url"])
+        except (ValueError, KeyError, TypeError):
+            continue
+    kept: list[str] = []
+    for line in existing:
+        if not line.strip():
+            continue
+        try:
+            url = json.loads(line).get("url")
+        except ValueError:
+            kept.append(line)
+            continue
+        if url in fresh_urls:
+            continue
+        kept.append(line)
+    return rows + kept
+
+
+def write_frame_rows(path: Path, rows: list[str]) -> None:
+    existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    merged = merge_frame_rows(existing, rows)
+    path.write_text("".join(line + "\n" for line in merged), encoding="utf-8")
+    log(f"[frames] {path}（本轮 {len(rows)} 行＋沿用台账 {len(merged) - len(rows)} 行）")
 
 
 def render(report: dict) -> str:
@@ -663,8 +728,8 @@ def render(report: dict) -> str:
 def selfcheck() -> int:
     """验画面判据会不会咬人：正对照要抓到自己那一枚，负对照要放过，重编码后还要抓得到。
 
-    夹具是 tools/fixtures/ 下的 16 张真帧，两把尺各验一遍：
-      占位页/广告那把（FRAME_FINGERPRINTS，13 枚）——14 格：12 张坏帧正对照 + 2 张节目画面负对照；
+    夹具是 tools/fixtures/ 下的 18 张真帧，两把尺各验一遍：
+      占位页/广告那把（FRAME_FINGERPRINTS，14 枚）——16 格：13 张坏帧正对照 + 3 张节目画面负对照；
       纯色帧那把（BLANK_FINGERPRINTS，1 枚）——4 格：蓝屏/黑屏两张正对照 + 同样那两张节目画面负对照
       （暗场那张近纯色，距纯色 16 格，是这一格最容易被咬到的东西）。
     缺夹具直接算不通过——不许把「没验成」念成「过了」。
@@ -683,9 +748,11 @@ def selfcheck() -> int:
         ("card_cctv4k.jpg", "CCTV UHD"),
         ("ad_cctv15.jpg", "广告：诊室画面"),
         ("ad_cctv9_shopping.jpg", "订购电话"),
+        ("ad_cctv4k_400689.jpg", "广告：诊室画面"),
         ("card_cctv4k_gslb.jpg", "CCTV 4K 超高清 测试卡"),
         ("ad_overload_qr.jpg", "服务器超负载"),
         ("frame_program.jpg", None),
+        ("frame_cctv4k_program.jpg", None),
         ("frame_dark_program.jpg", None),
     )
     import tempfile
@@ -770,6 +837,9 @@ def main() -> int:
     parser.add_argument("--rerender", action="store_true",
                         help="一行网络请求都不发：沿用 --out 目录里上一次的清单/分片读数和已落盘的帧，"
                              "只按当前门禁口径重出报告（改判据、补看图结论时用）")
+    parser.add_argument("--no-carry", action="store_true",
+                        help="关掉「G3 判定按 url 跨轮沿用」（默认开：同一地址上一轮判过的结论"
+                             "在本轮帧上仍成立就沿用，明细见 tools/.cache/gate/review_carry.json）")
     args = parser.parse_args()
     if args.selfcheck:
         return selfcheck()
@@ -852,6 +922,15 @@ def main() -> int:
     results.sort(key=lambda r: (r["subgroup"] or "", order[r["id"]]))
     write_line_frames(args.out / "line_frames.jsonl", results)
 
+    # G3 判定按 url 跨轮沿用（用户 10-26 点档乙）：只补「本轮待人工复核」的那几格，
+    # 本轮 review.json 已有的结论一律不动；被内容自证挡住的会退回「待人工复核」。
+    carry_summary = None
+    if not args.no_carry and not args.skip_frames:
+        review, carry_summary = review_carry.apply_carry(
+            review, results, current_review_path=args.out / "review.json",
+            prior_globs=(str(BASE / "tools/.cache/gate/round_*/review.json"),),
+            ledger_path=BASE / "tools/.cache/gate/review_carry.json", log=log)
+
     apk_path = args.apk.resolve() if args.apk else None
     apk_sha = None
     if apk_path:
@@ -869,6 +948,7 @@ def main() -> int:
         "channels": results,
         "recheck": recheck,
         "review": review,
+        "carry": carry_summary,
         "dist_dir": args.dist,
         "command": "python3 tools/prepack_report.py " + " ".join(sys.argv[1:]),
     }
@@ -922,7 +1002,7 @@ def main() -> int:
             parts.append(f"首条没画面 {len(first_missing)} 台：" + "、".join(first_missing[:20])
                          + ("…" if len(first_missing) > 20 else ""))
         if first_pending:
-            parts.append(f"首条没人判 {len(first_pending)} 台：" + "、".join(first_pending[:10])
+            parts.append(f"首条待人工复核 {len(first_pending)} 台：" + "、".join(first_pending[:10])
                          + ("…" if len(first_pending) > 10 else ""))
         if first_bad:
             parts.append(f"首条画面不正常 {len(first_bad)} 台：" + "、".join(first_bad[:10]))
@@ -932,34 +1012,50 @@ def main() -> int:
                           + "；".join(parts)))
 
     bad_logo, bad_picture, unreviewed = [], [], []
+    n_judged, n_carried = 0, 0
     for r in watch:
         for line in r["lines"]:
             if not line["frame"]:
                 continue
             logo, picture = line_verdict(report["review"], line)
             tag = f"{r['name']}·线{line['index'] + 1}"
-            # 画面本身不是节目内容就先判红：这一半不需要认台标，指纹命中即定，
-            # 剩下「台标对不对」那一半才要等人写结论。
-            if picture != PENDING and not frame_counts(r["name"], line, logo, picture):
-                bad_picture.append(f"{tag}（{picture}）")
-            elif logo == PENDING or picture == PENDING:
+            # 四态只在 frame_state 里算（用户 10-26 点档）：台标那一半没人写过就先进
+            # 「待人工复核」——自动指纹只填画面那一半，它不算判过。
+            state = frame_state(r["name"], line, logo, picture)
+            if state == STATE_PENDING:
                 unreviewed.append(tag)
-            elif not logo.startswith(GOOD_LOGO):
-                bad_logo.append(f"{tag}（{logo}）")
+            elif state == STATE_RED:
+                if picture != PENDING and not frame_counts(r["name"], line, logo, picture):
+                    bad_picture.append(f"{tag}（{picture}）")
+                else:
+                    bad_logo.append(f"{tag}（{logo}）")
+            elif state == STATE_CARRIED:
+                n_carried += 1
+            else:
+                n_judged += 1
+    carry_note = ""
+    if carry_summary and carry_summary["carried"]:
+        counts = carry_summary["counts"]
+        carry_note = (f"；沿用历史结论 {carry_summary['carried']} 张"
+                      f"（强 {counts['strong']}／旧红 {counts['red']}，"
+                      f"明细 {carry_summary['ledger']}）")
     if args.skip_frames:
         gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "未查",
-                          "--skip-frames 没抽帧，没有可判的图"))
+                          "--skip-frames 没抽帧，没有可判的图" + carry_note))
     elif unreviewed:
         gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "不通过",
-                          f"{len(unreviewed)} 张还没人判：" + "、".join(unreviewed[:15])
-                          + ("…" if len(unreviewed) > 15 else "")))
+                          f"{len(unreviewed)} 张待人工复核：" + "、".join(unreviewed[:15])
+                          + ("…" if len(unreviewed) > 15 else "") + carry_note))
     elif bad_logo or bad_picture:
         gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "不通过",
+                          f"判红 {len(bad_logo) + len(bad_picture)} 张："
                           f"台标不符 {len(bad_logo)} 张：" + "、".join(bad_logo[:10])
-                          + f"；画面异常 {len(bad_picture)} 张：" + "、".join(bad_picture[:10])))
+                          + f"；画面异常 {len(bad_picture)} 张：" + "、".join(bad_picture[:10])
+                          + carry_note))
     else:
         gates.append(gate("G3 每张画面都判过：台标相符且非广告/无二维码（与已知推广页/测试卡同图的自动判红）", "通过",
-                          f"{watch_framed} 张画面全部判为台标相符 + 正常节目画面"))
+                          f"{watch_framed} 张画面全部判为台标相符 + 正常节目画面"
+                          f"（本轮人工判过 {n_judged} 张、沿用 {n_carried} 张）" + carry_note))
 
     rest = [r for r in results if not r["must_watch"]]
     if args.scope != "all":

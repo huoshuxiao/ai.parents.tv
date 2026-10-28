@@ -1,0 +1,43 @@
+{
+ "reviewed_by": "qoder 逐张看图（tools/.cache/nologo/n1–n3.jpg）",
+ "reviewed_at": "2026-10-28 02:32",
+ "note": "补 logo_check 模板：这 6 帧机器判「疑似无台标」是假阴，台标都在左上。",
+ "reviews": [
+  {
+   "name": "湖南卫视",
+   "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/prepack/frames/cctv-a20014246a/line0/frame_first.jpg",
+   "logo": "台标相符（左上芒果标）",
+   "picture": "正常节目画面（人工复核 10-28）"
+  },
+  {
+   "name": "湖南卫视",
+   "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/prepack/frames/cctv-a20014246a/line1/frame_first.jpg",
+   "logo": "台标相符（左上芒果标）",
+   "picture": "正常节目画面（人工复核 10-28）"
+  },
+  {
+   "name": "三沙卫视",
+   "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/prepack/frames/cctv-8119144b6f/line0/frame_first.jpg",
+   "logo": "台标相符（左上「三沙卫视」标）",
+   "picture": "正常节目画面（人工复核 10-28）"
+  },
+  {
+   "name": "云南卫视",
+   "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/prepack/frames/cctv-fbae5a1844/line0/frame_first.jpg",
+   "logo": "台标相符（左上「云南卫视」彩虹标）",
+   "picture": "正常节目画面（人工复核 10-28）"
+  },
+  {
+   "name": "辽宁体育",
+   "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/prepack/frames/sports-3235ea7e93/line0/frame_first.jpg",
+   "logo": "台标相符（左上黄底「辽宁体育」标）",
+   "picture": "正常节目画面（人工复核 10-28）"
+  },
+  {
+   "name": "CGTN",
+   "frame": "/home/sunwenkun/Developer/agent-workspace/ai.parents.tv.git/tools/.cache/prepack/frames/cctv-cad79f08ae/line0/frame_first.jpg",
+   "logo": "台标相符（左上「CGTN」淡标）",
+   "picture": "正常节目画面（人工复核 10-28）"
+  }
+ ]
+}
