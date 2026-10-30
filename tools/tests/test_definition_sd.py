@@ -144,7 +144,9 @@ setup()
 key_cctv = bc.res_first_key("CCTV-2 财经")
 check("S1 央视组那把尺：1920 排在 1280 前", sorted([EDGE_URL, HD_URL], key=key_cctv), [HD_URL, EDGE_URL])
 check("S2 央视组那把尺：判坏的 4K 沉底", sorted([DEAD_4K_URL, EDGE_URL], key=key_cctv), [EDGE_URL, DEAD_4K_URL])
-check("S3 只有央视·卫视与地方频道用这把尺", sorted(bc.RES_FIRST_CATS), ["cctv", "local"])
+check("S3 清晰度这把尺覆盖全目录六组（10-30 起 AGENTS 那条不再只点名两组）",
+      sorted(bc.RES_FIRST_CATS),
+      ["cctv", "hktw", "international", "local", "sports", "tencent"])
 
 print(f"[definition-sd] 跑了 {ran} 格，失败 {len(failures)} 格")
 for f in failures:

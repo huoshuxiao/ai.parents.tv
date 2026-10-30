@@ -288,6 +288,9 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+from catalog_codec import apk_catalog_sha  # noqa: E402  (tools/ 同目录)
+
+
 def apk_asset_sha(apk: Path, asset: str) -> str:
     with zipfile.ZipFile(apk) as zf:
         return hashlib.sha256(zf.read(asset)).hexdigest()
@@ -605,7 +608,7 @@ def render(report: dict) -> str:
         f"- 目录文件：`{report['catalog']}`（{report['catalog_bytes']:,} B）",
         f"- 目录 sha256：`{report['catalog_sha256']}`",
         f"- 待打包 APK：{report['apk'] or '（本次未指定，报告只描述目录，不声明包体一致）'}",
-        f"- APK 内 `assets/channels.json` sha256：`{report['apk_sha256'] or '未取'}`",
+        f"- APK 内 `assets/catalog.dat`（解码后）sha256：`{report['apk_sha256'] or '未取'}`",
         f"- 覆盖：{len(report['channels'])} 台 / {lines_total} 条线路 · 抽到画面 {framed_total} 条"
         f"（口径：{'央视/卫视/辽宁体育 全线路逐条抽帧' if report['scope'] == 'must' else '全目录；必看台逐条、其他台探到第一条画面即停'}）",
         f"- 必看台串行复测：{report['recheck']['复测线路']} 条首轮全灭的线路被复测，"
@@ -934,7 +937,7 @@ def main() -> int:
     apk_path = args.apk.resolve() if args.apk else None
     apk_sha = None
     if apk_path:
-        apk_sha = apk_asset_sha(apk_path, "assets/channels.json")
+        apk_sha = apk_catalog_sha(apk_path)   # 读 assets/catalog.dat 并解码后再算——比的是明文
     review_path = args.out / "review.json"
     report = {
         "title": args.title,

@@ -122,10 +122,10 @@ check("E2 调它的那一站在标清闸门之前", source.index("logo_moves = r
       < source.index("channels, sd_empty = drop_sd_lines(channels)"), True)
 check("E3 结果落进目录顶层的 lineMoves", '"lineMoves": logo_moves' in source, True)
 check("E4 命令行有 --wshi-moves 这一路输入", '--wshi-moves' in source, True)
-kt = (BASE / "app/src/main/java/com/parentstv/live/data/Models.kt").read_text(encoding="utf-8")
+kt = (BASE / "app/src/main/java/com/sun/tv/parents/data/Models.kt").read_text(encoding="utf-8")
 check("E5 设备端读的字段名与 JSON 键名一致（不是构建写了没人读）",
       re.search(r"val lineMoves: Map<String, LineMove>", kt) is not None, True)
-merger = (BASE / "app/src/main/java/com/parentstv/live/data/CatalogUpdater.kt").read_text(encoding="utf-8")
+merger = (BASE / "app/src/main/java/com/sun/tv/parents/data/CatalogUpdater.kt").read_text(encoding="utf-8")
 # 锚点写成"位置"而不是"整串收尾"：v1.3.1 那次给这个调用加了第 4 个实参（channel.category），
 # 老锚点 `blocked, moves)` 当场判红——红的是尺子旧了，不是功能断了。
 # 这一条仍然有牙：`moves` 一旦从 `blocked` 后面掉下去（改调用顺序/整个摘掉）就不匹配。

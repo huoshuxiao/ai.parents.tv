@@ -511,20 +511,36 @@ STREAM_RAW = {}       # 规范地址 -> 公开列表原文那一行（尺寸没�
 SD_DROPPED = []       # 本轮摘掉的标清线（台名, 地址, 尺寸/原文），[definition] 那一笔报数用
 SD_EXEMPT = []        # 必留名单里「整台都是标清」所以原样保留的那几条
 # 这两组按清晰度排线路；其余组仍按证据档优先（用户这一句只点名央视·卫视与地方频道）。
-RES_FIRST_CATS = ("cctv", "local")
+# 用户 2026-10-30：「写在 AGENTS.md 中的线路排序规则…没有按要求实现」——AGENTS 那条是
+# 全目录口径（清晰度由高到低，同清晰度抖动小的排前），不再是只点名央视·卫视与地方频道。
+RES_FIRST_CATS = ("cctv", "local", "sports", "hktw", "international", "tencent")
 
 
 def resolution_rank(url):
-    """这条线自报/实测到的画面尺寸，用来把高分辨率的线排前面。
+    """这条线实测/自报到的**清晰度档**（0 未知/1 准高清/2 全高清/3 4K），用来把清晰度高的线排前面。
 
     两个来源，都拿到才算数，不从 URL 里的 1080/hd/蓝光 这类字样猜——实测那些字样既出现在
     主机名也出现在节目号里（`live.hd.hdbs.cn` 就是域名带 hd），拿来排序会把标错名的坏线顶到前面。
       1) prepack 抽到的原生尺寸（真画面，最可信）；
       2) 清单自报的 `#EXT-X-STREAM-INF:…RESOLUTION=宽x高`（health_probe 记的）。
-    都没有就返回 0（当作未知），让证据档和 IPv6 决定次序。
+
+    为什么折成档而不是比面积：VLC 报 1920×1090、ffprobe 报 1920×1080，差的 10 行是填充，
+    在屏幕上根本看不出差别；按面积排会让 1090 那一条永远压在 1080 前面，每换一次抽帧尺就
+    换一条首条线（10-30 那场重建 45 台首条变化里就有这种纯填充差异）。同档内谁先由
+    `jitter_key`（抖动小）→ `slow_penalty`（慢线）→ 证据档决定，正是 AGENTS 里
+    「相同清晰度抖动小的排前」那一句。宽度分档与 `tools/.cache/reorder_asset.py` 同一口径。
     """
     size = line_size(url)
-    return size[0] * size[1] if size else 0
+    if not size:
+        return 0
+    w = size[0]
+    if w >= 3840:
+        return 3
+    if w >= 1920:
+        return 2
+    if w >= 1280:
+        return 1
+    return 0
 
 
 SOURCES = {
@@ -604,7 +620,9 @@ REQUIRED_CHANNELS = MUST_PLAY_CHANNELS
 # 所以它享受同一条画面口径、但不享受"不许删空"那道闸）。
 CARD_IS_PICTURE_CHANNELS = set(MUST_PLAY_CHANNELS) | {"CCTV-8K 超高清"}
 SUBGROUP_ORDER = {
-    "cctv": ["央视", "卫视", "4K 超高清"],
+    # cctv 的顺序按用户 10-30 那句「频道排序，央视、卫视4K、卫视」：4K 排在卫视**前**。
+    # 这里以前写的是 央视→卫视→4K，与在库目录不一致 ⇒ 下一次重建会把 4K 那台甩到卫视后面去。
+    "cctv": ["央视", "4K 超高清", "卫视"],
     "local": PROVINCE_ORDER + ["其他"],
     "hktw": ["香港", "台湾", "澳门", "海外华人"],
     "featured": ["影视轮播", "NewTV", "CHC", "少儿"],
@@ -684,7 +702,7 @@ CCTV_NAMES = {
     "16": "CCTV-16 奥林匹克",
     "17": "CCTV-17 农业农村",
     # 「5+」排在 17 之后，不是排在 5 之后：用户 10-23 要的是数字键 1-17 给 CCTV-1…17、
-    # 18 给 CCTV-5+，而遥控器那串数字念的就是目录里的次序（app/src/main/java/com/parentstv/live/data/ChannelNumbers.kt）。
+    # 18 给 CCTV-5+，而遥控器那串数字念的就是目录里的次序（app/src/main/java/com/sun/tv/parents/data/ChannelNumbers.kt）。
     # 两边各排各的会出现「屏幕上第 6 个台、台号却是 18」，所以目录侧同批跟一条规则。
     "5+": "CCTV-5+ 体育赛事",
     "4K": "CCTV-4K 超高清",
@@ -699,8 +717,9 @@ CCTV_ORDER.update({
 CCTV_ORDER["CCTV-8K 超高清"] = CCTV_ORDER["CCTV-4K 超高清"] + 0.5
 
 SAT_ORDER = [
-    "北京卫视", "东方卫视", "天津卫视", "重庆卫视", "河北卫视", "山西卫视",
-    "内蒙古卫视", "辽宁卫视", "吉林卫视", "黑龙江卫视", "江苏卫视",
+    # 用户 2026-10-30：「地方卫视组内排序，北京、辽宁排前」——辽宁原来排第 8，现挪到北京之后。
+    "北京卫视", "辽宁卫视", "东方卫视", "天津卫视", "重庆卫视", "河北卫视", "山西卫视",
+    "内蒙古卫视", "吉林卫视", "黑龙江卫视", "江苏卫视",
     "浙江卫视", "安徽卫视", "东南卫视", "江西卫视", "山东卫视",
     "山东教育卫视", "河南卫视", "湖北卫视", "湖南卫视", "广东卫视",
     "深圳卫视", "广西卫视", "海南卫视", "三沙卫视",
@@ -1327,8 +1346,11 @@ def cross_check_relabels(moves):
     两份各写各的就会打架——构建按一份搬完，设备端合并公开列表时按另一份摘掉，那条线两头都没有。
     这里只报 `[check]` 不选边（与 #94 那一枚同一处置）：真要对表，把 Kotlin 那 4 条收进 lineMoves。
     """
-    src_kt = BASE / "app/src/main/java/com/parentstv/live/data/StreamUrl.kt"
+    src_kt = BASE / "app/src/main/java/com/sun/tv/parents/data/StreamUrl.kt"
     if not src_kt.exists():
+        # 读不到不许静默跳过：10-30 改包名（com.parentstv.live → com.sun.tv.parents）之后
+        # 这一行还在读老路径，名册对表整格变成空转，而输出里一个字都没有。
+        print(f"[check] 改挂名册对表：读不到 {src_kt.relative_to(BASE)} ⇒ 这一格没跑（不是「无冲突」）")
         return
     text = src_kt.read_text(encoding="utf-8")
     start = text.find("private val targets")
@@ -1380,6 +1402,58 @@ def drop_sd_lines(channels):
             row["streams"] = sorted(keep, key=res_first_key(row["name"]))
         survivors.append(row)
     return survivors, dropped_channels
+
+
+def enforce_sat_4k(channels):
+    """卫视 4K 频道只许留 3840 宽的线（AGENTS「卫视4K频道线路分辨率3840x2160」）。
+
+    用户 2026-10-30 点档原话：「将卫视4K频道非3840线路移入对应的卫视频道，要与原有线路去重」。
+    这一条必须写进构建：10-30 那次重建把 `东方卫视 4K` 用一条 1920×1090 的线又造了出来
+    （用户已裁决这个 4K 台该消失），手工改资产挡不住下一次重建。
+    四条边界：
+      ①只动 `subgroup == "4K 超高清"` 且台名以 `4K` 结尾的台；`CCTV-4K 超高清`（央视组）不在此列；
+      ②对应基础台必须存在且是「卫视」组——找不到就原样留着并点名，不凭一条结论造台、也不静默删线；
+      ③尺寸未知的线不搬（判不了是不是 3840），留在 4K 台里，宁可留着也不误判；
+      ④搬过去按 canon 去重，再按 `res_first_key` 重排基础台（搬进来的线也遵守清晰度次序）。
+    返回（留下的台, 搬运记录 (4K台, 基础台, 待搬, 实搬), 搬空被删的台名）。
+    """
+    by_name = {ch["name"]: ch for ch in channels}
+    moved, dropped, survivors = [], [], []
+    for ch in channels:
+        name = ch["name"]
+        m = re.search(r"\s*4K$", name)
+        if ch.get("subgroup") != "4K 超高清" or not m:
+            survivors.append(ch)
+            continue
+        base = by_name.get(name[:m.start()].strip())
+        if base is None or base.get("subgroup") != "卫视":
+            print(f"[4k] {name}：找不到对应的卫视频道 ⇒ 原样保留 {len(ch['streams'])} 条（不搬、不删）")
+            survivors.append(ch)
+            continue
+        stay, move = [], []
+        for url in ch["streams"]:
+            size = line_size(url)
+            (move if size and size[0] < 3840 else stay).append(url)
+        if move:
+            seen = {stream_rules.canon(u) for u in base["streams"]}
+            added = []
+            for url in move:
+                key = stream_rules.canon(url)
+                if key in seen:
+                    continue
+                seen.add(key)
+                base["streams"].append(url)
+                added.append(url)
+            if added:
+                base["streams"] = sorted(base["streams"], key=res_first_key(base["name"]))
+            moved.append((name, base["name"], len(move), len(added)))
+        if stay:
+            row = dict(ch)
+            row["streams"] = stay
+            survivors.append(row)
+        else:
+            dropped.append(name)
+    return survivors, moved, dropped
 
 
 def line_quality_map(channels):
@@ -1976,6 +2050,12 @@ MANUAL_EXTRA = [
     # 2026-10-23：安徽卫视不在当前公开列表的输入文件里，走人工频道入口补进去。
     # 帧证据：10-23 13:29 抽到《男生女生向前冲》，左上角安徽卫视台标，1920×1090。
     ("安徽卫视", "cctv", "卫视", "http://gmxw.7766.org:808/hls/40/index.m3u8"),
+    # 用户 10-29 01:0x「hls/28 兵团 属于 新疆，**符合线路标准后**，参照河北卫视做」：
+    # hls/28 那条实测只有 720×578（标清），不达标 ⇒ 不用它。
+    # 达标的是 ylt 主机 n34：09:1x 抽帧 1920×1090、左上「兵团卫视」红黄星标（逐张看过），
+    # 按河北卫视那套新建频道、归到 地方频道·新疆。
+    # 用户 10-29 10:2x「算卫视频道」：兵团卫视归 央视·卫视（不再放 地方频道·新疆）。
+    ("兵团卫视", "cctv", "卫视", "http://ylt.7766.org:333/hls/34/index.m3u8"),
     # 2026-10-23 15:0x 卫视扩容第二批：这 20 台在公开列表里重捞后逐台抽帧认过台标，各收第 1 条。
     # 帧证据：tools/.cache/sat_new*/（每台一张 frame_first.jpg，左上角台标与台名逐张对过）；
     # 河北用官方 event.pull.hebtv.com（《主角》＋「河北卫视」），兵团用 ifengli。
@@ -2015,6 +2095,45 @@ MANUAL_SPORTS = [
     ("风云足球", "sports", "国内体育", 12,
      "http://38.75.136.137:98/gslb/dsdqpub/fyzq.m3u8?auth=testpub"),
 ]
+
+
+# ---- 用户 10-29 01:1x 四台新主机逐号扫描（ylt / 27.129 / 1.24.39 / 36.110）----
+# 只收抽帧 ≥1920×1080 且台标与台名相符的号（帧证据 tools/.cache/hosts_frames/<host>/n<号>/ 逐张人工认过；
+# 尺寸证据 tools/.cache/newhost_frames/line_frames.jsonl）。没有线路加线路；没有频道加频道。
+# ---- 用户 10-29 01:1x 四台新主机逐号扫描（ylt / 27.129 / 1.24.39 / 36.110）----
+# 只收抽帧 ≥1920×1080 且台标与台名相符的号（帧证据 tools/.cache/hosts_frames/<host>/n<号>/ 逐张人工认过；
+# 尺寸证据 tools/.cache/newhost_frames/line_frames.jsonl）。没有线路加线路；没有频道加频道。
+MANUAL_EXTRA.extend([
+    ("梨园频道", "cctv", "央视", "http://ylt.7766.org:333/hls/18/index.m3u8"),
+    ("河北经济生活", "local", "河北", "http://ylt.7766.org:333/hls/23/index.m3u8"),
+    ("河北都市", "local", "河北", "http://ylt.7766.org:333/hls/24/index.m3u8"),
+    ("河北少儿科教", "local", "河北", "http://ylt.7766.org:333/hls/26/index.m3u8"),
+    ("三农频道（河北）", "local", "河北", "http://ylt.7766.org:333/hls/28/index.m3u8"),
+    ("邯郸新闻综合", "local", "河北", "http://ylt.7766.org:333/hls/30/index.m3u8"),
+    ("邯郸公共", "local", "河北", "http://ylt.7766.org:333/hls/32/index.m3u8"),
+    ("金鹰纪实", "local", "湖南", "http://ylt.7766.org:333/hls/67/index.m3u8"),
+    ("金鹰卡通", "local", "湖南", "http://ylt.7766.org:333/hls/73/index.m3u8"),
+    ("CCTV-第一剧场", "cctv", "央视", "http://ylt.7766.org:333/hls/76/index.m3u8"),
+    ("CCTV-风云剧场", "cctv", "央视", "http://ylt.7766.org:333/hls/77/index.m3u8"),
+    ("CCTV-怀旧剧场", "cctv", "央视", "http://ylt.7766.org:333/hls/78/index.m3u8"),
+    ("CCTV-风云音乐", "cctv", "央视", "http://ylt.7766.org:333/hls/79/index.m3u8"),
+    ("CCTV-高尔夫·网球", "cctv", "央视", "http://ylt.7766.org:333/hls/81/index.m3u8"),
+    ("CCTV-兵器科技", "cctv", "央视", "http://ylt.7766.org:333/hls/83/index.m3u8"),
+    ("CCTV-世界地理", "cctv", "央视", "http://ylt.7766.org:333/hls/84/index.m3u8"),
+    ("CCTV-女性时尚", "cctv", "央视", "http://ylt.7766.org:333/hls/98/index.m3u8"),
+    ("内蒙古蒙语频道", "local", "内蒙古", "http://1.24.39.180:808/hls/18/index.m3u8"),
+    ("内蒙古新闻综合", "local", "内蒙古", "http://1.24.39.180:808/hls/19/index.m3u8"),
+    ("内蒙古经济生活", "local", "内蒙古", "http://1.24.39.180:808/hls/20/index.m3u8"),
+    ("内蒙古文体娱乐", "local", "内蒙古", "http://1.24.39.180:808/hls/21/index.m3u8"),
+    ("内蒙古农牧频道", "local", "内蒙古", "http://1.24.39.180:808/hls/22/index.m3u8"),
+    ("内蒙古少儿频道", "local", "内蒙古", "http://1.24.39.180:808/hls/23/index.m3u8"),
+    ("CGTN 纪录", "cctv", "央视", "http://36.110.54.118:866/hls/17/index.m3u8"),
+    ("CGTN 俄语", "cctv", "央视", "http://36.110.54.118:866/hls/19/index.m3u8"),
+    ("CETV-1", "cctv", "央视", "http://36.110.54.118:866/hls/37/index.m3u8"),
+    ("金鹰纪实卫视", "local", "湖南", "http://36.110.54.118:866/hls/38/index.m3u8"),
+    ("高清电影", "local", "北京", "http://36.110.54.118:866/hls/21/index.m3u8"),
+])
+
 
 
 def add_manual_channels(builder):
@@ -2872,6 +2991,11 @@ def build(args):
         "CCTV-2 财经": (
             "http://8.138.7.223/tv/api.php?id=cctv2",
         ),
+        # 用户 10-29 00:5x「卫视4K频道最低分辨率为全高清」：苏州 4K 的线2 抽帧原生 1280×738，
+        # 低于全高清；线1 是 3840×2178 真 4K。按台名摘这一条，线1 不动（同台内按地址摘）。
+        "苏州 4K": (
+            "http://live-auth.51kandianshi.com/szgd/csztv4k_hd.m3u8",
+        ),
     }
     for ch in channels:
         extra = manual_streams.get(ch["name"])
@@ -3319,6 +3443,231 @@ def build(args):
             "http://8.138.7.223/tv/cctvnews.php?id=cctv4k",
         ],
     }
+    # ---- 四台新主机的补充线路（同上，逐条 1080p＋台标相符）----
+    # ---- 四台新主机的补充线路（同上，逐条 1080p＋台标相符）----
+    _NEW_HOST_BACKUPS = {
+        "CCTV-1 综合": [
+            "http://ylt.7766.org:333/hls/1/index.m3u8",
+            "http://ylt.7766.org:333/hls/29/index.m3u8",
+            "http://27.129.145.110:4433/hls/1/index.m3u8",
+            "http://1.24.39.180:808/hls/1/index.m3u8",
+            "http://36.110.54.118:866/hls/1/index.m3u8",
+        ],
+        "CCTV-10 科教": [
+            "http://ylt.7766.org:333/hls/10/index.m3u8",
+            "http://27.129.145.110:4433/hls/10/index.m3u8",
+            "http://1.24.39.180:808/hls/10/index.m3u8",
+            "http://36.110.54.118:866/hls/10/index.m3u8",
+        ],
+        "CCTV-11 戏曲": [
+            "http://ylt.7766.org:333/hls/11/index.m3u8",
+            "http://27.129.145.110:4433/hls/11/index.m3u8",
+            "http://1.24.39.180:808/hls/11/index.m3u8",
+        ],
+        "CCTV-12 社会与法": [
+            "http://ylt.7766.org:333/hls/12/index.m3u8",
+            "http://27.129.145.110:4433/hls/12/index.m3u8",
+            "http://1.24.39.180:808/hls/12/index.m3u8",
+            "http://36.110.54.118:866/hls/11/index.m3u8",
+        ],
+        "CCTV-13 新闻": [
+            "http://27.129.145.110:4433/hls/13/index.m3u8",
+            "http://1.24.39.180:808/hls/13/index.m3u8",
+        ],
+        "CCTV-14 少儿": [
+            "http://ylt.7766.org:333/hls/14/index.m3u8",
+            "http://27.129.145.110:4433/hls/14/index.m3u8",
+            "http://1.24.39.180:808/hls/14/index.m3u8",
+        ],
+        "CCTV-15 音乐": [
+            "http://27.129.145.110:4433/hls/15/index.m3u8",
+            "http://1.24.39.180:808/hls/15/index.m3u8",
+        ],
+        "CCTV-16 奥林匹克": [
+            "http://27.129.145.110:4433/hls/16/index.m3u8",
+            "http://1.24.39.180:808/hls/60/index.m3u8",
+        ],
+        "CCTV-17 农业农村": [
+            "http://ylt.7766.org:333/hls/17/index.m3u8",
+            "http://27.129.145.110:4433/hls/17/index.m3u8",
+            "http://1.24.39.180:808/hls/61/index.m3u8",
+        ],
+        "CCTV-2 财经": [
+            "http://1.24.39.180:808/hls/2/index.m3u8",
+            "http://36.110.54.118:866/hls/2/index.m3u8",
+        ],
+        "CCTV-3 综艺": [
+            "http://ylt.7766.org:333/hls/3/index.m3u8",
+            "http://27.129.145.110:4433/hls/3/index.m3u8",
+            "http://1.24.39.180:808/hls/3/index.m3u8",
+            "http://36.110.54.118:866/hls/3/index.m3u8",
+        ],
+        "CCTV-4 中文国际": [
+            "http://ylt.7766.org:333/hls/4/index.m3u8",
+            "http://27.129.145.110:4433/hls/4/index.m3u8",
+            "http://1.24.39.180:808/hls/4/index.m3u8",
+        ],
+        "CCTV-5 体育": [
+            "http://27.129.145.110:4433/hls/5/index.m3u8",
+            "http://1.24.39.180:808/hls/5/index.m3u8",
+            "http://36.110.54.118:866/hls/5/index.m3u8",
+        ],
+        "CCTV-5+ 体育赛事": [
+            "http://36.110.54.118:866/hls/13/index.m3u8",
+        ],
+        "CCTV-6 电影": [
+            "http://ylt.7766.org:333/hls/6/index.m3u8",
+            "http://27.129.145.110:4433/hls/6/index.m3u8",
+            "http://1.24.39.180:808/hls/6/index.m3u8",
+        ],
+        "CCTV-7 国防军事": [
+            "http://ylt.7766.org:333/hls/7/index.m3u8",
+            "http://27.129.145.110:4433/hls/7/index.m3u8",
+            "http://1.24.39.180:808/hls/7/index.m3u8",
+            "http://36.110.54.118:866/hls/7/index.m3u8",
+        ],
+        "CCTV-8 电视剧": [
+            "http://ylt.7766.org:333/hls/8/index.m3u8",
+            "http://27.129.145.110:4433/hls/8/index.m3u8",
+            "http://1.24.39.180:808/hls/8/index.m3u8",
+            "http://36.110.54.118:866/hls/8/index.m3u8",
+        ],
+        "CCTV-9 纪录": [
+            "http://27.129.145.110:4433/hls/9/index.m3u8",
+            "http://1.24.39.180:808/hls/9/index.m3u8",
+            "http://36.110.54.118:866/hls/9/index.m3u8",
+        ],
+        "CGTN": [
+            "http://ylt.7766.org:333/hls/16/index.m3u8",
+        ],
+        "CGTN 西语": [
+            "http://36.110.54.118:866/hls/18/index.m3u8",
+        ],
+        "东南卫视": [
+            "http://27.129.145.110:4433/hls/27/index.m3u8",
+        ],
+        "东方卫视": [
+            "http://ylt.7766.org:333/hls/39/index.m3u8",
+            "http://27.129.145.110:4433/hls/40/index.m3u8",
+            "http://1.24.39.180:808/hls/44/index.m3u8",
+            "http://36.110.54.118:866/hls/28/index.m3u8",
+        ],
+        "兵团卫视": [
+            "http://ylt.7766.org:333/hls/34/index.m3u8",
+        ],
+        "内蒙古卫视": [
+            "http://1.24.39.180:808/hls/16/index.m3u8",
+            "http://1.24.39.180:808/hls/17/index.m3u8",
+        ],
+        "北京卫视": [
+            "http://27.129.145.110:4433/hls/28/index.m3u8",
+            "http://36.110.54.118:866/hls/14/index.m3u8",
+        ],
+        "吉林卫视": [
+            "http://ylt.7766.org:333/hls/54/index.m3u8",
+        ],
+        "四川卫视": [
+            "http://27.129.145.110:4433/hls/35/index.m3u8",
+            "http://1.24.39.180:808/hls/39/index.m3u8",
+        ],
+        "天津卫视": [
+            "http://ylt.7766.org:333/hls/40/index.m3u8",
+            "http://27.129.145.110:4433/hls/29/index.m3u8",
+            "http://1.24.39.180:808/hls/33/index.m3u8",
+        ],
+        "安徽卫视": [
+            "http://27.129.145.110:4433/hls/26/index.m3u8",
+            "http://1.24.39.180:808/hls/31/index.m3u8",
+        ],
+        "山东卫视": [
+            "http://27.129.145.110:4433/hls/31/index.m3u8",
+            "http://1.24.39.180:808/hls/35/index.m3u8",
+            "http://36.110.54.118:866/hls/33/index.m3u8",
+        ],
+        "广东卫视": [
+            "http://ylt.7766.org:333/hls/43/index.m3u8",
+            "http://1.24.39.180:808/hls/48/index.m3u8",
+        ],
+        "广西卫视": [
+            "http://ylt.7766.org:333/hls/56/index.m3u8",
+        ],
+        "江苏卫视": [
+            "http://ylt.7766.org:333/hls/37/index.m3u8",
+            "http://27.129.145.110:4433/hls/25/index.m3u8",
+            "http://36.110.54.118:866/hls/27/index.m3u8",
+        ],
+        "江西卫视": [
+            "http://ylt.7766.org:333/hls/52/index.m3u8",
+            "http://27.129.145.110:4433/hls/36/index.m3u8",
+        ],
+        "河北卫视": [
+            "http://ylt.7766.org:333/hls/22/index.m3u8",
+            "http://27.129.145.110:4433/hls/18/index.m3u8",
+            "http://1.24.39.180:808/hls/47/index.m3u8",
+        ],
+        "河北经济生活": [
+            "http://27.129.145.110:4433/hls/19/index.m3u8",
+        ],
+        "河北都市": [
+            "http://27.129.145.110:4433/hls/20/index.m3u8",
+        ],
+        "河南卫视": [
+            "http://27.129.145.110:4433/hls/33/index.m3u8",
+        ],
+        "浙江卫视": [
+            "http://1.24.39.180:808/hls/29/index.m3u8",
+            "http://36.110.54.118:866/hls/29/index.m3u8",
+        ],
+        "深圳卫视": [
+            "http://27.129.145.110:4433/hls/38/index.m3u8",
+            "http://1.24.39.180:808/hls/34/index.m3u8",
+            "http://36.110.54.118:866/hls/26/index.m3u8",
+        ],
+        "湖北卫视": [
+            "http://27.129.145.110:4433/hls/39/index.m3u8",
+            "http://1.24.39.180:808/hls/43/index.m3u8",
+        ],
+        "湖南卫视": [
+            "http://ylt.7766.org:333/hls/35/index.m3u8",
+            "http://27.129.145.110:4433/hls/23/index.m3u8",
+            "http://1.24.39.180:808/hls/28/index.m3u8",
+        ],
+        "甘肃卫视": [
+            "http://ylt.7766.org:333/hls/65/index.m3u8",
+        ],
+        "西藏卫视": [
+            "http://ylt.7766.org:333/hls/63/index.m3u8",
+        ],
+        "贵州卫视": [
+            "http://ylt.7766.org:333/hls/51/index.m3u8",
+            "http://27.129.145.110:4433/hls/37/index.m3u8",
+            "http://1.24.39.180:808/hls/32/index.m3u8",
+        ],
+        "重庆卫视": [
+            "http://ylt.7766.org:333/hls/49/index.m3u8",
+        ],
+        "风云足球": [
+            "http://ylt.7766.org:333/hls/80/index.m3u8",
+        ],
+        "黑龙江卫视": [
+            "http://36.110.54.118:866/hls/25/index.m3u8",
+        ],
+    }
+    for _n, _urls in _NEW_HOST_BACKUPS.items():
+        manual_backups.setdefault(_n, []).extend(_urls)
+
+    # 用户 10-29 10:3x：36.110 这 8 个号我这一场 VLC 漏抽，补抽后 7 个是 1920×1090
+    # （n4 仍 0 帧、n21 的截图目录是空的）⇒ 按台名补线，首条一律不动。
+    for _n, _urls in {
+        "CCTV-6 电影": ["http://36.110.54.118:866/hls/6/index.m3u8"],
+        "CCTV-14 少儿": ["http://36.110.54.118:866/hls/12/index.m3u8"],
+        "CGTN 阿语": ["http://36.110.54.118:866/hls/22/index.m3u8"],
+        "湖南卫视": ["http://36.110.54.118:866/hls/24/index.m3u8"],
+        "湖北卫视": ["http://36.110.54.118:866/hls/30/index.m3u8"],
+        "广东卫视": ["http://36.110.54.118:866/hls/32/index.m3u8"],
+    }.items():
+        manual_backups.setdefault(_n, []).extend(_urls)
+
     # 用户 10-24 11:3x 点档「候选认台标 → 落盘」：第四批 20 条。
     # 39 条长窗确认「画面正常推进」的候选，逐张看 2×2 放大格认过台标的 20 条收进来；
     # 判红 17 条全是 `47.97.252.137:8088`（另 `198.204.228.26/live/cctv9hd` 一条）端出来的
@@ -3570,6 +3919,16 @@ def build(args):
     if missing:
         print(f"[换组][警告] 名单 {len(CHANNEL_GROUP_OVERRIDE)} 台、目录里只落了 {len(moved)} 台："
               f"{'、'.join(missing)} 没进目录（源里没有这台，或被删台规则整台摘掉）")
+    # 卫视 4K 只留 3840 宽的线（AGENTS「卫视4K频道线路分辨率3840x2160」＋用户 10-30 点档）。
+    # 位置在 strict_filter 之后：先让每台过完删线/删台，再搬；搬进来的线跟着基础台重新排一次。
+    channels, fourk_moved, fourk_dropped = enforce_sat_4k(channels)
+    for fourk_name, base_name, want, got in fourk_moved:
+        print(f"[4k] {fourk_name}：非 3840 线 {want} 条 ⇒ 搬进 {base_name} {got} 条"
+              f"（其余与原有线路重复，按 canon 去重）")
+    if fourk_dropped:
+        print(f"[4k] 搬空后整台删除：{'、'.join(fourk_dropped)}")
+    print(f"[4k] 卫视 4K 组现读 {sum(1 for ch in channels if ch.get('subgroup') == '4K 超高清')} 台"
+          f"（每台线路都必须是 3840 宽）")
     # 尺寸这一份按最后存下来的那些线算（strict_filter 还会摘一批），报数才和目录里的条数自洽。
     line_quality = line_quality_map(channels)
     print(f"[resolution] 随目录打进 APK 的每条线尺寸 {len(line_quality)} 条"

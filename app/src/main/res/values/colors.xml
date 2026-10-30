@@ -2,4 +2,6 @@
 <resources>
     <color name="tv_background">#070B14</color>
     <color name="tv_accent">#FFB23E</color>
+    <!-- 与 splash_hd.png 左上角像素 (8,13,22) 同色：系统启动画面底色接到应用内全屏图上时不跳色 -->
+    <color name="tv_splash_edge">#080D16</color>
 </resources>

@@ -76,7 +76,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--adb", default=os.environ.get("ADB", "/usr/bin/adb"))
     ap.add_argument("--serial", default="192.168.1.4:5555")
-    ap.add_argument("--pkg", default="com.parentstv.live")
+    ap.add_argument("--pkg", default="com.sun.tv.parents")
     ap.add_argument("--live", default="tools/.cache/live_log.txt")
     ap.add_argument("--cid", default=None, help="默认取日志里最近一次 `要探>0` 的那一台")
     ap.add_argument("--boot-wait", type=float, default=14.0)

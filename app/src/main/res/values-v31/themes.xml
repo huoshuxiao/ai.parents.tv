@@ -4,8 +4,10 @@
          冷启动那几秒就是用户说的「黑屏」。这里把系统启动画面的底色与图标也钉成本应用的样子。 -->
     <style name="Theme.ParentsTV" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
-        <item name="android:windowSplashScreenBackground">@color/tv_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenBackground">@color/tv_splash_edge</item>
+        <!-- 系统启动画面最多只能放一个图标（≈288dp），放 ic_launcher 就是用户说的"一张小图"。
+             这里不放图标：只见同色底 → 应用内 LoadingScreen 的全屏大图，省掉"小图再迁移"。 -->
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
         <item name="android:colorAccent">@color/tv_accent</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowActionModeOverlay">true</item>

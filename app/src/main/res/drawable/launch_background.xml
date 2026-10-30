@@ -1,22 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 系统在 Compose 画出第一帧之前显示的就是这张窗口背景。以前它是纯色 #070B14，
-     在电视上看起来就是一块黑屏（用户 10-25「程序刚启动时有黑屏」）。
-     改成同色系渐变 + 居中的 App 图标：等待那一两秒看到的是品牌画面，不是黑屏。 -->
+<!-- 系统在 Compose 画出第一帧之前显示的就是这张窗口背景。
+     用户 2026-10-30：「启动时加载的还是一张小图，然后再迁移」——原来这里是渐变 + 160dp 居中图标，
+     电视上看就是一张小图居中、随后才切到应用内的全屏加载图。
+     现在直接铺 splash_hd 全屏（1792×1024，与 16:9 只差 1.6%，fill 拉伸看不出来），
+     系统画面→应用内 LoadingScreen 是同一张图，不再有"小图→大图"的迁移感。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
-        <shape>
-            <gradient
-                android:angle="90"
-                android:endColor="#0C1424"
-                android:startColor="#070B14" />
-        </shape>
-    </item>
-    <item
-        android:width="160dp"
-        android:height="160dp"
-        android:gravity="center">
         <bitmap
             android:gravity="fill"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@drawable/splash_hd" />
     </item>
 </layer-list>

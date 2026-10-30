@@ -204,21 +204,43 @@ def numbered_ids(cat: dict) -> list:
     return [c["id"] for c in ordered]
 
 
-SELFTEST = [("CCTV-6 电影", "cctv-638cd7b045", 6), ("咪咕直播 4K-1", "sports-7cfbe253ed", 61)]
+SELFTEST = [("CCTV-6 电影", "cctv-638cd7b045"), ("咪咕直播 4K-1", "sports-7cfbe253ed")]
 
 
-def selfcheck_numbers(ids: list) -> None:
-    """拿两枚真机观察到的跳台结果自证"复刻的台号表"没歪；歪了就拒绝起这一跑。
+def selfcheck_numbers(ids: list, serial: str | None = None, pkg: str = "com.sun.tv.parents",
+                       live: bool = True) -> None:
+    """自证"复刻的台号表"没歪：按复刻表算出的键，**在设备上真按一次**，看应用落在哪台。
 
-    10-26 13:5x 在这台小米电视上按 6 落在 CCTV-6 电影、按 61 落在咪咕直播 4K-1（读的是
-    应用自己打的 `StallWatch: watch channel=`）。这两格是**真机读数**，不是我从目录推的。
+    早期这里是写死「号→台」的读数（10-26 小米电视按 6 落 CCTV-6、按 61 落咪咕直播 4K-1）。
+    10-29 一天内目录动了几次（重入四台主机、删地方频道、cctv 组改序），写死的号每动一次目录就
+    过期一次、把整跑拒在门外——所以改成现读现按：号从本次要跑的那份表里算，落点由设备回答。
+    判据没变（复刻表歪了照样拒跑），只是不再依赖任何过期常量。
     """
     table = {cid: i + 1 for i, cid in enumerate(ids)}
-    for name, cid, want in SELFTEST:
+    for name, cid in SELFTEST:
         got = table.get(cid)
-        if got != want:
-            raise SystemExit(f"[拒绝] 复刻台号表说 {name}({cid}) 是 {got}，真机观察到的是 {want} ⇒ 不跑")
-        print(f"[自证] {name} = 键 {want}（复刻与真机观察一致）", flush=True)
+        if got is None:
+            raise SystemExit(f"[拒绝] 复刻台号表里没有 {name}({cid}) ⇒ 不跑")
+        if not serial or not live:
+            # 干跑（--dry-run）也一律不按键：干跑动一下设备，就会把正在跑的那一场污染掉
+            #（10-29 20:20 实测：第 1 轮跑到 CCTV-1 线 6 时我干跑了一次自证，按 6 把应用带去了 CCTV-6）。
+            print(f"[自证] {name} = 键 {got}（干跑/未连设备：只念号，不实按）", flush=True)
+            continue
+        if not ensure_player(serial, pkg, print):
+            raise SystemExit("[拒绝] 进不了播放器，按不出自证读数 ⇒ 不跑")
+        press_number(serial, got)
+        # 按完要**轮询**等落点：这台应用在慢线/卡顿里时数字键会排队几秒到几十秒，
+        # 固定等 6 秒会把「还在上一个台」读成「复刻表歪了」（10-29 12:5x 就误拒过一次）。
+        seen, age = None, None
+        for _ in range(12):
+            time.sleep(2.5)
+            seen, age = current_channel(serial)
+            if seen == cid:
+                break
+        if seen != cid:
+            raise SystemExit(
+                f"[拒绝] 按 {got} 落在 {seen}（{age} ms 前），复刻表说应是 {name}({cid}) ⇒ 不跑")
+        print(f"[自证] 按 {got} 落在 {name}（设备现读，复刻表与设备一致）", flush=True)
 
 
 def in_player(serial, fresh_ms: int = 15_000) -> bool:
@@ -494,7 +516,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--serial", default="192.168.1.4:5555")
     ap.add_argument("--adb", default=ADB_DEFAULT)
-    ap.add_argument("--pkg", default="com.parentstv.live")
+    ap.add_argument("--pkg", default="com.sun.tv.parents")
     ap.add_argument("--group", default="migu", choices=sorted(GROUPS))
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument("--out", default="")
@@ -607,7 +629,7 @@ def main():
     rows = targets(args.group, dev)
     totals = line_totals(dev)          # 挪线要知道这台有几格（面板行数＝设备那份目录）
     ids = numbered_ids(dev)
-    selfcheck_numbers(ids)
+    selfcheck_numbers(ids, args.serial, args.pkg, live=not args.dry_run)
     # 停车台：测每一条线之前先跳去的那个台（默认台号 1，测它自己时用台号 2）。
     park_cid = ids[args.park - 1] if len(ids) >= args.park else None
     park_cid_number = args.park

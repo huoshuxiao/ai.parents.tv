@@ -722,8 +722,8 @@ health49 = {bc.stream_rules.canon(UB): {"verdict": "可取到分片", "elapsed_m
             bc.stream_rules.canon(UE): {"verdict": "可取到分片", "elapsed_ms": 15000}}
 ch49 = row("甲测试台", [UA, UB, UC], category="international", subgroup="新闻")
 chans49, moved49 = bc.move_slow_lines_back([ch49], health49, lambda n, u: False)
-check("49 甲：首分片 >10 秒的慢线挪到台内最后、其余保序",
-      chans49[0]["streams"] == [UA, UC, UB] and moved49 == [("甲测试台", bc.stream_rules.canon(UB))],
+check("49 10-30 起国际组也走清晰度优先 ⇒ 慢线不挪台尾（同档内的次序由 slow_penalty 压）",
+      chans49[0]["streams"] == [UA, UB, UC] and moved49 == [],
       f"现序={chans49[0]['streams']} 挪={moved49}")
 ch49b = row("甲测试台2", [UA, UD], category="international", subgroup="新闻")
 chans49b, moved49b = bc.move_slow_lines_back([ch49b], health49, lambda n, u: u == UD)
@@ -741,11 +741,18 @@ chans49d, moved49d = bc.move_slow_lines_back([ch49d], health49, lambda n, u: Fal
 check("49d 央视·卫视／地方组：慢线不挪台尾（清晰度优先），排原位、名单为空",
       chans49d[0]["streams"] == [UA, UB, UC] and moved49d == [],
       f"现序={chans49d[0]['streams']} 挪={moved49d}")
-ch49e = row("甲测试台5", [UA, UB, UC], category="sports", subgroup="国内体育")
-chans49e, moved49e = bc.move_slow_lines_back([ch49e], health49, lambda n, u: False)
-check("49e 正对照：体育组不在这条豁免里，慢线照旧挪到最后",
-      chans49e[0]["streams"] == [UA, UC, UB] and moved49e == [("甲测试台5", bc.stream_rules.canon(UB))],
-      f"现序={chans49e[0]['streams']} 挪={moved49e}")
+# 10-30 起六组都按清晰度优先，这一支在生产配置下不再命中任何组；
+# 把名单临时缩回两组，证明「挪台尾」那一支本身没坏（负对照，不是恒真）。
+saved_res_first = bc.RES_FIRST_CATS
+bc.RES_FIRST_CATS = ("cctv", "local")
+try:
+    ch49e = row("甲测试台5", [UA, UB, UC], category="tencent", subgroup="腾讯体育")
+    chans49e, moved49e = bc.move_slow_lines_back([ch49e], health49, lambda n, u: False)
+    check("49e 负对照：豁免名单缩回两组时，腾讯组慢线照旧挪到最后",
+          chans49e[0]["streams"] == [UA, UC, UB] and moved49e == [("甲测试台5", bc.stream_rules.canon(UB))],
+          f"现序={chans49e[0]['streams']} 挪={moved49e}")
+finally:
+    bc.RES_FIRST_CATS = saved_res_first
 # 用户 10-25 18:5x 点档「乙：清晰度优先」的第二半：慢线只压同档内次序（三个对照）
 UF = "http://slowA.example.com/f.m3u8"
 UG = "http://fastA.example.com/g.m3u8"

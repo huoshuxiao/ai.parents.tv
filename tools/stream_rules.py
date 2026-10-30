@@ -1,6 +1,6 @@
 """线路地址的判定规则：目录生成、健康探测、App 端合并共用同一把尺。
 
-Python 侧与 Kotlin 侧（app/src/main/java/com/parentstv/live/data/StreamUrl.kt）
+Python 侧与 Kotlin 侧（app/src/main/java/com/sun/tv/parents/data/StreamUrl.kt）
 必须给出同样的结论，tools/tests/test_rules_parity.py 会逐条对拍。
 """
 

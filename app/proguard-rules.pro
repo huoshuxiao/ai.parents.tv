@@ -1,3 +1,3 @@
--keep class com.parentstv.live.data.** { *; }
+-keep class com.sun.tv.parents.data.** { *; }
 -keepattributes *Annotation*, InnerClasses
 -dontwarn org.jetbrains.annotations.**

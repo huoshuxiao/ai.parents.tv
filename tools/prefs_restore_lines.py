@@ -118,7 +118,7 @@ def main():
                     help="可多次；越靠后的越优先（复跑定案那份要放在最后）")
     ap.add_argument("--toolv", type=int, default=6)
     ap.add_argument("--serial", default="192.168.1.4:5555")
-    ap.add_argument("--pkg", default="com.parentstv.live")
+    ap.add_argument("--pkg", default="com.sun.tv.parents")
     ap.add_argument("--blocked", default="app/src/main/assets/channels.json")
     ap.add_argument("--out", default=None, help="把计划落一份 jsonl（只在 --write 时写）")
     ap.add_argument("--write", action="store_true", help="**真改设备**：链子跑完之前不许加")
